@@ -15,15 +15,21 @@
       </div>
       <div id="controls">
         <input type="text" id="search" placeholder="Filter channels..." />
-        <div id="sort-bar">
-          <button id="sort-name" class="sort-btn active" data-sort="name">Name</button>
-          <button id="sort-fav" class="sort-btn" data-sort="fav">Fav</button>
+        <div id="filter-bar">
+          <button id="sort-name" class="sort-btn active">Name</button>
+          <button id="toggle-fav" class="sort-btn">☆ Favorites</button>
+          <select id="group-filter">
+            <option value="">All Groups</option>
+          </select>
         </div>
       </div>
       <div id="channel-list"></div>
       <div id="status-bar">
         <span id="channel-count">0 channels</span>
-        <button id="refresh-btn" title="Refresh channels">↻</button>
+        <div id="status-actions">
+          <button id="settings-btn" title="Tuning settings">⚙</button>
+          <button id="refresh-btn" title="Refresh channels">↻</button>
+        </div>
       </div>
     </aside>
     <main id="player-area">
@@ -32,11 +38,62 @@
         <div id="no-channel">
           <span>Select a channel to start watching</span>
         </div>
+        <div id="player-toolbar">
+          <button id="btn-screenshot" title="Screenshot (save PNG)">📷 Screenshot</button>
+          <button id="btn-record" title="Record video">⏺ Record</button>
+        </div>
       </div>
       <div id="now-playing">
         <span id="channel-name">No channel selected</span>
+        <div id="channel-info"></div>
       </div>
     </main>
+  </div>
+  <div id="settings-overlay" class="overlay hidden">
+    <div id="settings-panel">
+      <div id="settings-header">
+        <span>Tuning Settings</span>
+        <button id="settings-close" class="close-btn">×</button>
+      </div>
+      <div id="settings-body">
+        <label class="setting-row">
+          <span>Max Buffer Length (s)</span>
+          <input type="number" id="s-maxBufferLength" min="10" max="300" />
+        </label>
+        <label class="setting-row">
+          <span>Max Buffer Size (MB)</span>
+          <input type="number" id="s-maxBufferSize" min="10" max="1000" />
+        </label>
+        <label class="setting-row">
+          <span>Start Level (bitrate)</span>
+          <input type="number" id="s-startLevel" min="-1" max="20" />
+        </label>
+        <label class="setting-row">
+          <span>Fragment Loading Retry</span>
+          <input type="number" id="s-fragLoadingMaxRetry" min="0" max="20" />
+        </label>
+        <label class="setting-row">
+          <span>Fragment Timeout (ms)</span>
+          <input type="number" id="s-fragLoadingTimeOut" min="1000" max="60000" step="1000" />
+        </label>
+        <label class="setting-row checkbox-row">
+          <span>Enable Web Worker</span>
+          <input type="checkbox" id="s-enableWorker" />
+        </label>
+        <label class="setting-row checkbox-row">
+          <span>Cap to Player Size</span>
+          <input type="checkbox" id="s-capLevelToPlayerSize" />
+        </label>
+        <label class="setting-row checkbox-row">
+          <span>Preload Next Fragment</span>
+          <input type="checkbox" id="s-startFragPrefetch" />
+        </label>
+      </div>
+      <div id="settings-footer">
+        <button id="settings-reset" class="btn-secondary">Reset Defaults</button>
+        <button id="settings-apply" class="btn-primary">Apply & Close</button>
+      </div>
+    </div>
   </div>
   <script src="lib/hls.min.js"></script>
   <script src="app.js"></script>

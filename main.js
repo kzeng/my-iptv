@@ -1,16 +1,20 @@
-const { app, BrowserWindow, ipcMain, session } = require('electron')
+const { app, BrowserWindow, ipcMain, session, dialog } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
 const https = require('https')
 
 const FAVORITES_FILE = path.join(app.getPath('userData'), 'favorites.json')
+const LAST_CHANNEL_FILE = path.join(app.getPath('userData'), 'last-channel.json')
+const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json')
 const PORT = 12999
 const ROOT = __dirname
 
 let mainWindow
 let server
 let pendingChannelHeaders = null
+const keepAliveAgent = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 32 })
+const keepAliveAgentHttps = new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 32 })
 
 function resolveUrl(base, relative) {
   try {
@@ -74,8 +78,10 @@ function _doFetch(targetUrl, headers, res, depth) {
     }
     return
   }
-  const mod = targetUrl.startsWith('https') ? https : http
+  const isHttps = targetUrl.startsWith('https')
+  const mod = isHttps ? https : http
   const options = new URL(targetUrl)
+  options.agent = isHttps ? keepAliveAgentHttps : keepAliveAgent
   options.headers = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
   }
@@ -238,4 +244,51 @@ ipcMain.handle('toggle-favorite', (_event, channelId) => {
 
 ipcMain.handle('set-channel-headers', (_event, headers) => {
   pendingChannelHeaders = headers
+})
+
+function loadLastChannel() {
+  try {
+    if (fs.existsSync(LAST_CHANNEL_FILE)) {
+      return JSON.parse(fs.readFileSync(LAST_CHANNEL_FILE, 'utf-8'))
+    }
+  } catch (e) {}
+  return null
+}
+
+function saveLastChannel(url) {
+  try {
+    fs.writeFileSync(LAST_CHANNEL_FILE, JSON.stringify({ url }))
+  } catch (e) {}
+}
+
+ipcMain.handle('get-last-channel', () => loadLastChannel())
+ipcMain.handle('save-last-channel', (_event, url) => { saveLastChannel(url) })
+
+function loadSettings() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'))
+    }
+  } catch (e) {}
+  return null
+}
+
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2))
+  } catch (e) {}
+}
+
+ipcMain.handle('get-settings', () => loadSettings())
+ipcMain.handle('save-settings', (_event, settings) => { saveSettings(settings) })
+
+ipcMain.handle('save-file', async (_event, options, data) => {
+  const { filePath } = await dialog.showSaveDialog(mainWindow, options)
+  if (!filePath) return null
+  try {
+    fs.writeFileSync(filePath, Buffer.from(data, 'base64'))
+    return filePath
+  } catch (e) {
+    return null
+  }
 })
