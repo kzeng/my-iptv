@@ -1,0 +1,20 @@
+{
+  "name": "my-iptv",
+  "version": "1.0.0",
+  "description": "IPTV Player",
+  "main": "main.js",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron . 2>/dev/null",
+    "dev": "electron . --dev",
+    "build": "rm -rf release && cp -R node_modules/electron/dist/Electron.app 'release/My IPTV.app' && rm -rf 'release/My IPTV.app/Contents/Resources/default_app.asar' && mkdir -p 'release/My IPTV.app/Contents/Resources/app' && cp main.js preload.js index.html style.css app.js channels.m3u package.json 'release/My IPTV.app/Contents/Resources/app/' && cp -R lib 'release/My IPTV.app/Contents/Resources/app/lib' && cp -R node_modules/hls.js 'release/My IPTV.app/Contents/Resources/app/node_modules/' && /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName My IPTV' 'release/My IPTV.app/Contents/Info.plist' && /usr/libexec/PlistBuddy -c 'Set :CFBundleName My IPTV' 'release/My IPTV.app/Contents/Info.plist' && /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier com.myiptv.app' 'release/My IPTV.app/Contents/Info.plist' && ln -sf Electron 'release/My IPTV.app/Contents/MacOS/My IPTV'"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-packager": "^17.1.2"
+  }
+}

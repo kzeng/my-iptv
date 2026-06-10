@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' http: https: data: blob:; media-src 'self' http: https: data: blob:; connect-src 'self' http: https:;">
+  <title>My IPTV</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div id="logo">
+        <h1>My IPTV</h1>
+      </div>
+      <div id="controls">
+        <input type="text" id="search" placeholder="Filter channels..." />
+        <div id="sort-bar">
+          <button id="sort-name" class="sort-btn active" data-sort="name">Name</button>
+          <button id="sort-fav" class="sort-btn" data-sort="fav">Fav</button>
+        </div>
+      </div>
+      <div id="channel-list"></div>
+      <div id="status-bar">
+        <span id="channel-count">0 channels</span>
+        <button id="refresh-btn" title="Refresh channels">↻</button>
+      </div>
+    </aside>
+    <main id="player-area">
+      <div id="video-container">
+        <video id="video-player" controls autoplay></video>
+        <div id="no-channel">
+          <span>Select a channel to start watching</span>
+        </div>
+      </div>
+      <div id="now-playing">
+        <span id="channel-name">No channel selected</span>
+      </div>
+    </main>
+  </div>
+  <script src="lib/hls.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
