@@ -34,6 +34,16 @@
 
 ## 适合谁用
 
+## 截图预览
+
+![界面截图 1](./docs/Screenshot%20from%202026-06-11%2017-56-37.png)
+
+![界面截图 2](./docs/Screenshot%20from%202026-06-11%2017-55-47.png)
+
+![界面截图 3](./docs/Screenshot%20from%202026-06-11%2017-55-18.png)
+
+![界面截图 4](./docs/Screenshot%20from%202026-06-11%2017-59-44.png)
+
 - 想在 Windows 桌面上快速播放 IPTV 直播源的用户。
 - 需要管理大频道列表、收藏和播放历史的用户。
 - 需要测试 M3U/HLS 源可用性、User-Agent、Referer 和播放兼容性的用户。

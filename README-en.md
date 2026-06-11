@@ -34,6 +34,16 @@ Download the package for your platform, extract it, and run `My IPTV.exe`.
 
 ## Who It Is For
 
+## Screenshots
+
+![Screenshot 1](./docs/Screenshot%20from%202026-06-11%2017-56-37.png)
+
+![Screenshot 2](./docs/Screenshot%20from%202026-06-11%2017-55-47.png)
+
+![Screenshot 3](./docs/Screenshot%20from%202026-06-11%2017-55-18.png)
+
+![Screenshot 4](./docs/Screenshot%20from%202026-06-11%2017-59-44.png)
+
 - Users who want a simple desktop IPTV player.
 - Users who manage large M3U playlists, favorites, and playback history.
 - Users who test IPTV/HLS streams, User-Agent, Referer, and playback compatibility.
