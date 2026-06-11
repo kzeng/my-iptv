@@ -23,6 +23,10 @@ let currentChannel = null
 let showFavoritesOnly = false
 let selectedGroup = ''
 let hls = null
+const VIRTUAL_ROW_HEIGHT = 40
+const VIRTUAL_OVERSCAN = 10
+let searchDebounceTimer = null
+let virtualRenderFrame = null
 
 const I18N = {
   zh: {
@@ -192,30 +196,63 @@ async function refreshChannels() {
   return result.channels || []
 }
 
-function renderChannels(list) {
+function createChannelItem(ch) {
+  const item = document.createElement('div')
+  item.className = 'channel-item'
+  item.dataset.url = ch.url
+  if (currentChannel && ch.url === currentChannel.url) item.classList.add('active')
+
+  const logo = document.createElement('img')
+  logo.className = 'ch-logo'
+  logo.src = ch.logo || ''
+  logo.alt = ''
+  logo.loading = 'lazy'
+  logo.onerror = () => { logo.style.display = 'none' }
+
+  const name = document.createElement('span')
+  name.className = 'ch-name'
+  name.textContent = ch.name
+
+  const isFav = favorites.includes(ch.url)
+  const fav = document.createElement('button')
+  fav.className = `fav-btn${isFav ? ' favorited' : ''}`
+  fav.dataset.url = ch.url
+  fav.textContent = isFav ? '★' : '☆'
+
+  item.appendChild(logo)
+  item.appendChild(name)
+  item.appendChild(fav)
+  return item
+}
+
+function createVirtualSpacer(height) {
+  const spacer = document.createElement('div')
+  spacer.className = 'virtual-spacer'
+  spacer.style.height = `${height}px`
+  return spacer
+}
+
+function renderChannels(list, resetScroll = false) {
+  if (resetScroll) channelList.scrollTop = 0
   channelList.innerHTML = ''
   if (list.length === 0) {
     channelList.innerHTML = `<div class="empty-msg">${t('noChannelsFound')}</div>`
     return
   }
+  const viewportHeight = channelList.clientHeight || 600
+  const start = Math.max(0, Math.floor(channelList.scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN)
+  const visibleCount = Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT) + VIRTUAL_OVERSCAN * 2
+  const end = Math.min(list.length, start + visibleCount)
   const frag = document.createDocumentFragment()
-  for (const ch of list) {
-    const item = document.createElement('div')
-    item.className = 'channel-item'
-    item.dataset.url = ch.url
-    if (currentChannel && ch.url === currentChannel.url) item.classList.add('active')
-    const isFav = favorites.includes(ch.url)
-    item.innerHTML = `
-      <img class="ch-logo" src="${ch.logo || ''}" alt="" loading="lazy" onerror="this.style.display='none'" />
-      <span class="ch-name">${ch.name}</span>
-      <button class="fav-btn${isFav ? ' favorited' : ''}" data-url="${ch.url}">${isFav ? '★' : '☆'}</button>
-    `
-    frag.appendChild(item)
+  frag.appendChild(createVirtualSpacer(start * VIRTUAL_ROW_HEIGHT))
+  for (let i = start; i < end; i++) {
+    frag.appendChild(createChannelItem(list[i]))
   }
+  frag.appendChild(createVirtualSpacer((list.length - end) * VIRTUAL_ROW_HEIGHT))
   channelList.appendChild(frag)
 }
 
-function applyFilterAndSort() {
+function applyFilterAndSort(resetScroll = true) {
   const q = searchInput.value.toLowerCase().trim()
   let r = channels
   if (q) r = r.filter((c) => c.name.toLowerCase().includes(q))
@@ -232,8 +269,21 @@ function applyFilterAndSort() {
   }
   r.sort((a, b) => a.name.localeCompare(b.name))
   filteredChannels = r
-  renderChannels(filteredChannels)
+  renderChannels(filteredChannels, resetScroll)
   channelCount.textContent = formatChannelCount(filteredChannels.length)
+}
+
+function scheduleFilterAndSort() {
+  clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(applyFilterAndSort, 180)
+}
+
+function scheduleVirtualRender() {
+  if (virtualRenderFrame) return
+  virtualRenderFrame = requestAnimationFrame(() => {
+    virtualRenderFrame = null
+    renderChannels(filteredChannels)
+  })
 }
 
 function updateActiveChannel() {
@@ -357,7 +407,7 @@ function playChannel(ch) {
 async function toggleFavorite(channelUrl) {
   try {
     favorites = await window.iptvAPI.toggleFavorite(channelUrl)
-    applyFilterAndSort()
+    applyFilterAndSort(false)
   } catch {}
 }
 
@@ -438,7 +488,9 @@ channelList.addEventListener('click', (e) => {
   if (ch) playChannel(ch)
 })
 
-searchInput.addEventListener('input', applyFilterAndSort)
+searchInput.addEventListener('input', scheduleFilterAndSort)
+channelList.addEventListener('scroll', scheduleVirtualRender)
+window.addEventListener('resize', scheduleVirtualRender)
 
 function isTypingTarget(target) {
   if (!target) return false
@@ -463,8 +515,8 @@ function playChannelByOffset(offset) {
   const baseIndex = currentIndex === -1 ? 0 : currentIndex
   const nextIndex = Math.min(Math.max(baseIndex + offset, 0), filteredChannels.length - 1)
   playChannel(filteredChannels[nextIndex])
-  const active = channelList.querySelector(`.channel-item[data-url="${CSS.escape(filteredChannels[nextIndex].url)}"]`)
-  if (active) active.scrollIntoView({ block: 'nearest' })
+  channelList.scrollTop = nextIndex * VIRTUAL_ROW_HEIGHT
+  renderChannels(filteredChannels)
 }
 
 function toggleVideoPlayback() {

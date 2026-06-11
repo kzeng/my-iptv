@@ -156,3 +156,25 @@ npm run build
 3. `node scripts/package.js`
 
 Windows 下如遇发布目录文件被锁定，需要关闭正在运行的 `My IPTV.exe`，并避免 PowerShell 或 Explorer 当前目录停留在 `release/` 或 `release-slim/` 内。
+
+
+
+1. 频道列表虚拟滚动
+现在已经有 12350 个频道，全量 DOM 渲染会影响加载、搜索、切换收藏和滚动流畅度。优先做固定行高虚拟列表，只渲染可视区域附近几十个频道。
+
+2. 播放源筛选
+增加 全部 / ZBDS IPTV / IPTV Org 下拉框。这样你可以直接只看 iptv-org，不用靠搜索猜频道名。
+
+3. 搜索防抖
+搜索框输入加 150ms 左右 debounce，避免每按一个字符就对 1.2 万条频道执行过滤、排序、重绘。
+
+4. 数据库返回 source 信息
+当前前端频道对象没有带播放源名称。需要在 db.js listChannels() 里 join playlist_sources，返回 sourceId/sourceName/sourceUrl，前端才能做播放源筛选。
+
+5. 刷新状态可视化
+在设置或关于页显示每个源的刷新状态：上次刷新时间、成功/失败、导入数量。这样能直接判断 iptv-org 是网络失败还是已成功加载。
+
+6. Logo 加载节流
+虚拟滚动后自然会减少同时出现的 logo 图片；再进一步可以给 /logo 请求加简单并发限制，避免快速滚动时触发太多图片请求。
+
+先做 1 + 2 + 3 + 4，这四项能明显改善 12350 频道下的体验。5 + 6 可以作为第二阶段。

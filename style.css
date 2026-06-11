@@ -139,10 +139,15 @@ body {
 .channel-item {
   display: flex;
   align-items: center;
+  height: 40px;
   padding: 8px 16px;
   cursor: pointer;
   transition: background 0.15s;
   gap: 10px;
+}
+
+.virtual-spacer {
+  flex-shrink: 0;
 }
 
 .channel-item:hover {
