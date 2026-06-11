@@ -164,15 +164,21 @@ class IptvStore {
       WHERE enabled = 1
       ORDER BY name COLLATE NOCASE ASC
     `).all()
-    return rows.map((row) => ({
-      name: row.name,
-      url: row.url,
-      logo: row.logo_url ? `/logo?url=${encodeURIComponent(row.logo_url)}` : '',
-      logoUrl: row.logo_url || '',
-      group: row.group_title || '',
-      userAgent: row.user_agent || '',
-      referrer: row.referrer || '',
-    }))
+    const seen = new Set()
+    return rows.reduce((acc, row) => {
+      if (seen.has(row.url)) return acc
+      seen.add(row.url)
+      acc.push({
+        name: row.name,
+        url: row.url,
+        logo: row.logo_url ? `/logo?url=${encodeURIComponent(row.logo_url)}` : '',
+        logoUrl: row.logo_url || '',
+        group: row.group_title || '',
+        userAgent: row.user_agent || '',
+        referrer: row.referrer || '',
+      })
+      return acc
+    }, [])
   }
 
   replaceSourceChannels(sourceId, channels) {
@@ -309,6 +315,33 @@ class IptvStore {
         last_access_at = excluded.last_access_at
     `).run(logoUrl, key, filePath, contentType || 'application/octet-stream', body.length, nowIso())
     return { file_path: filePath, content_type: contentType, size_bytes: body.length }
+  }
+
+  importJsonChannels(jsonPath, sourceName) {
+    if (!fs.existsSync(jsonPath)) return 0
+    let source = this.db.prepare(
+      'SELECT id FROM playlist_sources WHERE url = ?'
+    ).get(`file://${jsonPath}`)
+    if (!source) {
+      this.db.prepare(`
+        INSERT INTO playlist_sources (name, url, enabled, priority, status)
+        VALUES (?, ?, 1, 0, 'local')
+      `).run(sourceName || 'Local JSON', `file://${jsonPath}`)
+      source = this.db.prepare(
+        'SELECT id FROM playlist_sources WHERE url = ?'
+      ).get(`file://${jsonPath}`)
+    }
+    const channels = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'))
+    const formatted = channels.map((ch) => ({
+      name: ch.name || 'Unknown',
+      url: ch.url,
+      logo: ch.logo || '',
+      group: ch.group || '',
+      userAgent: ch.userAgent || '',
+      referrer: ch.referrer || '',
+    }))
+    this.replaceSourceChannels(source.id, formatted)
+    return formatted.length
   }
 
   close() {

@@ -236,12 +236,27 @@ function _doFetch(targetUrl, headers, res, depth) {
     }
     return
   }
+  let parsed
+  try {
+    parsed = new URL(targetUrl)
+  } catch {
+    if (!res.headersSent) {
+      res.writeHead(400)
+      res.end('Invalid URL: ' + targetUrl.slice(0, 200))
+    }
+    return
+  }
   const isHttps = targetUrl.startsWith('https')
   const mod = isHttps ? https : http
-  const options = new URL(targetUrl)
-  options.agent = isHttps ? keepAliveAgentHttps : keepAliveAgent
-  options.headers = {
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+  const options = {
+    protocol: parsed.protocol,
+    hostname: parsed.hostname,
+    port: parsed.port,
+    path: parsed.pathname + parsed.search,
+    agent: isHttps ? keepAliveAgentHttps : keepAliveAgent,
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+    },
   }
   if (headers) {
     if (headers.userAgent) options.headers['User-Agent'] = headers.userAgent
@@ -249,11 +264,15 @@ function _doFetch(targetUrl, headers, res, depth) {
   }
 
   let finished = false
+  let overallTimer = null
+  function cleanup() { clearTimeout(overallTimer) }
+
   const proxyReq = mod.get(options, (proxyRes) => {
     const status = proxyRes.statusCode || 200
     if (status >= 300 && status < 400 && proxyRes.headers.location) {
       proxyRes.resume()
       finished = true
+      cleanup()
       _doFetch(resolveUrl(targetUrl, proxyRes.headers.location), headers, res, depth + 1)
       return
     }
@@ -263,6 +282,8 @@ function _doFetch(targetUrl, headers, res, depth) {
       const chunks = []
       proxyRes.on('data', (chunk) => chunks.push(chunk))
       proxyRes.on('end', () => {
+        finished = true
+        cleanup()
         const body = Buffer.concat(chunks).toString('utf-8')
         const rewritten = rewriteM3U8(body, targetUrl)
         res.writeHead(status, {
@@ -274,6 +295,8 @@ function _doFetch(targetUrl, headers, res, depth) {
       })
       return
     }
+    finished = true
+    cleanup()
     res.writeHead(status, {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
@@ -281,18 +304,29 @@ function _doFetch(targetUrl, headers, res, depth) {
     })
     proxyRes.pipe(res)
   })
-  proxyReq.on('error', () => {
-    if (finished || res.headersSent) return
-    finished = true
-    res.writeHead(502)
-    res.end()
-  })
-  proxyReq.setTimeout(15000, () => {
+
+  overallTimer = setTimeout(() => {
     if (finished || res.headersSent) return
     finished = true
     proxyReq.destroy()
     res.writeHead(504)
+    res.end('Proxy timeout')
+  }, 30000)
+  proxyReq.on('error', () => {
+    if (finished || res.headersSent) return
+    finished = true
+    cleanup()
+    res.writeHead(502)
     res.end()
+  })
+  proxyReq.on('close', () => {
+    if (finished || res.headersSent) return
+    finished = true
+    cleanup()
+    if (!res.headersSent) {
+      res.writeHead(502)
+      res.end('Connection closed')
+    }
   })
 }
 
@@ -307,7 +341,15 @@ function startServer() {
       if (parsedUrl.pathname === '/proxy') {
         const targetUrl = parsedUrl.searchParams.get('url')
         if (targetUrl) {
-          fetchURL(targetUrl, pendingChannelHeaders, res)
+          try {
+            fetchURL(targetUrl, pendingChannelHeaders, res)
+          } catch (e) {
+            console.error('[PROXY ERROR]', e.message)
+            if (!res.headersSent) {
+              res.writeHead(502)
+              res.end('Proxy error: ' + e.message)
+            }
+          }
           return
         }
       }
@@ -356,11 +398,22 @@ function createWindow() {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
   store = new IptvStore(app.getPath('userData'))
+
   try {
     if (fs.existsSync(FAVORITES_FILE)) {
       store.importFavorites(JSON.parse(fs.readFileSync(FAVORITES_FILE, 'utf-8')))
     }
   } catch {}
+
+  const JSON_CHANNELS = path.join(ROOT, 'channels.json')
+  if (store.listChannels().length === 0 && fs.existsSync(JSON_CHANNELS)) {
+    try {
+      const count = store.importJsonChannels(JSON_CHANNELS, 'Pre-compiled')
+      console.log(`Imported ${count} channels from channels.json`)
+    } catch (e) {
+      console.warn('Failed to import channels.json:', e.message)
+    }
+  }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({

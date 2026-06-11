@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   startFragPrefetch: true,
   fragLoadingMaxRetry: 6,
   fragLoadingTimeOut: 20000,
+  levelLoadingTimeOut: 20000,
+  manifestLoadingTimeOut: 20000,
 }
 
 let channels = []
@@ -56,6 +58,8 @@ const I18N = {
     startLevel: '初始码率层级',
     fragRetry: '分片加载重试',
     fragTimeout: '分片超时 (毫秒)',
+    levelTimeout: '码率层超时 (毫秒)',
+    manifestTimeout: '播放列表超时 (毫秒)',
     enableWorker: '启用 Web Worker',
     capPlayerSize: '限制到播放器尺寸',
     preloadNext: '预加载下一分片',
@@ -112,6 +116,8 @@ const I18N = {
     startLevel: 'Start Level (bitrate)',
     fragRetry: 'Fragment Loading Retry',
     fragTimeout: 'Fragment Timeout (ms)',
+    levelTimeout: 'Level Timeout (ms)',
+    manifestTimeout: 'Manifest Timeout (ms)',
     enableWorker: 'Enable Web Worker',
     capPlayerSize: 'Cap to Player Size',
     preloadNext: 'Preload Next Fragment',
@@ -358,6 +364,8 @@ function playChannel(ch) {
         startFragPrefetch: settings.startFragPrefetch ?? DEFAULT_SETTINGS.startFragPrefetch,
         fragLoadingMaxRetry: settings.fragLoadingMaxRetry ?? DEFAULT_SETTINGS.fragLoadingMaxRetry,
         fragLoadingTimeOut: settings.fragLoadingTimeOut || DEFAULT_SETTINGS.fragLoadingTimeOut,
+        levelLoadingTimeOut: settings.levelLoadingTimeOut || DEFAULT_SETTINGS.levelLoadingTimeOut,
+        manifestLoadingTimeOut: settings.manifestLoadingTimeOut || DEFAULT_SETTINGS.manifestLoadingTimeOut,
       })
       hls.loadSource(PROXY_BASE + encodeURIComponent(ch.url))
       hls.attachMedia(video)
@@ -369,12 +377,19 @@ function playChannel(ch) {
           setTimeout(() => { video.muted = false }, 500)
         }).catch((e) => {
           if (ch.url !== currentChannel?.url) return
+          if (e.message.includes('interrupted by a new load request')) {
+            setTimeout(() => {
+              if (ch.url === currentChannel?.url) video.play().catch(() => {})
+            }, 500)
+            return
+          }
           showError(t('clickToPlay') + e.message, true)
           video.muted = false
           video.classList.add('visible')
         })
       })
       hls.on(Hls.Events.ERROR, (_e, data) => {
+        console.error('[HLS]', data.type, data.details, data.fatal ? 'FATAL' : '')
         if (data.fatal) {
           const code = data.response ? data.response.code : ''
           const detail = data.details || data.type || 'unknown'
@@ -400,6 +415,7 @@ function playChannel(ch) {
 
     updateActiveChannel()
   } catch (err) {
+    console.error('[playChannel ERROR]', err.message, err.stack?.slice(0, 200))
     showError(t('error') + err.message)
   }
 }
@@ -599,6 +615,8 @@ function populateSettingsPanel() {
   document.getElementById('s-startLevel').value = s.startLevel
   document.getElementById('s-fragLoadingMaxRetry').value = s.fragLoadingMaxRetry
   document.getElementById('s-fragLoadingTimeOut').value = s.fragLoadingTimeOut
+  document.getElementById('s-levelLoadingTimeOut').value = s.levelLoadingTimeOut
+  document.getElementById('s-manifestLoadingTimeOut').value = s.manifestLoadingTimeOut
   document.getElementById('s-enableWorker').checked = s.enableWorker
   document.getElementById('s-capLevelToPlayerSize').checked = s.capLevelToPlayerSize
   document.getElementById('s-startFragPrefetch').checked = s.startFragPrefetch
@@ -613,6 +631,8 @@ function readSettingsPanel() {
     startLevel: parseInt(document.getElementById('s-startLevel').value) || DEFAULT_SETTINGS.startLevel,
     fragLoadingMaxRetry: parseInt(document.getElementById('s-fragLoadingMaxRetry').value) || DEFAULT_SETTINGS.fragLoadingMaxRetry,
     fragLoadingTimeOut: parseInt(document.getElementById('s-fragLoadingTimeOut').value) || DEFAULT_SETTINGS.fragLoadingTimeOut,
+    levelLoadingTimeOut: parseInt(document.getElementById('s-levelLoadingTimeOut').value) || DEFAULT_SETTINGS.levelLoadingTimeOut,
+    manifestLoadingTimeOut: parseInt(document.getElementById('s-manifestLoadingTimeOut').value) || DEFAULT_SETTINGS.manifestLoadingTimeOut,
     enableWorker: document.getElementById('s-enableWorker').checked,
     capLevelToPlayerSize: document.getElementById('s-capLevelToPlayerSize').checked,
     startFragPrefetch: document.getElementById('s-startFragPrefetch').checked,

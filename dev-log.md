@@ -102,6 +102,7 @@
 | 发布目录重复 `electron.exe` | 复制完整 Electron dist 后又复制为应用 exe | 打包时跳过原始 `electron.exe`，只保留 `My IPTV.exe` |
 | `better-sqlite3` ABI 不匹配 | native 模块按本机 Node ABI 编译，Electron 需要不同 ABI | 使用 `@electron/rebuild` 在打包前重编译 |
 | ZIP 阶段偶发文件锁错误 | Windows 进程或 Shell 占用发布目录文件 | 构建主体保留，ZIP 失败降级为警告 |
+| `better-sqlite3` 编译失败（Apple Clang 14 + Electron 33） | V8 头文件缺少 `typename`，Apple Clang 14 在 C++20 模式下报错 | 新增 `scripts/patch-v8-headers.js`，在 `electron-rebuild` 前自动打补丁；设置 `CXXFLAGS="-std=c++20"` |
 
 ## 已完成优化
 
