@@ -81,3 +81,29 @@ Electron IPTV player with HLS streaming proxy, favorites, group filtering, and t
 - [ ] Periodic auto-refresh of channel list
 - [ ] Playback history
 - [ ] Custom playlist URL import
+
+### Brainstorming Backlog
+
+#### Innovative Features
+- [ ] **Channel health radar** — periodically probe availability, time to first frame, failure rate, and last successful playback; mark channels as stable, slow, or unavailable in the list.
+- [ ] **Smart channel deduplication and aliases** — merge duplicate entries by channel name, logo, group, and stream URL fingerprint; provide one canonical entry for common aliases.
+- [ ] **EPG + catch-up entry points** — integrate XMLTV/EPG data to show current and next programs; if a source supports timeshift, allow program-guide click-to-replay.
+- [ ] **Multi-source priority and failover** — attach several candidate streams to one channel, auto-switch on failure or stutter, and remember the user's best route.
+- [ ] **Family / kids mode** — support living-room use with channel group allowlists, hidden adult or unstable channels, and a locked settings panel.
+- [ ] **LAN casting / remote-control API** — expose a local HTTP/WebSocket control API so a phone browser can change channels, favorite, pause, and adjust volume.
+
+#### Performance
+- [ ] **Virtualized channel list** — render only visible rows for 10k+ channels, reducing DOM nodes and improving search, group switching, and scroll smoothness.
+- [ ] **Precomputed channel indexes** — generate lowercase names, group arrays, dedupe keys, and sort keys during `channels.json` build to avoid repeated runtime string work.
+- [ ] **Proxy caching and conditional requests** — add short TTL cache plus ETag/Last-Modified support for M3U8, EPG, and playlist sources to reduce repeat network traffic.
+- [ ] **Playback quality telemetry** — record local metrics such as buffer events, average download time, error types, and current bitrate to support auto-tuning and channel health.
+- [ ] **Tiered channel asset loading** — load names and URLs first, lazy-load logos, and cache failed logo URLs so broken assets do not slow the list.
+- [ ] **Lean release packaging** — ship only runtime files, excluding tests, docs, and unused npm package content to reduce release size and startup I/O.
+
+#### User Experience
+- [ ] **Command palette / fast channel switcher** — Spotlight-style search that accepts channel name, group, or favorite state and plays on Enter.
+- [ ] **Channel details drawer** — show URL, User-Agent, Referer, resolution, bitrate, recent errors, speed-test result, plus copy and diagnostics actions.
+- [ ] **First-run setup wizard** — guide users through built-in source selection, local M3U import, remote URL entry, favorites, and playback troubleshooting.
+- [ ] **Recoverable error actions** — on playback failure, offer Retry, switch to backup source, copy diagnostics, or mark unavailable instead of showing text only.
+- [ ] **Keyboard and remote-friendly focus** — support arrow-key channel switching, Enter to play, Space to pause, F for fullscreen, number-key jumping, with clear focus states.
+- [ ] **Enhanced playback state memory** — remember volume, mute, fullscreen, last group/search filter, and recent channels to reduce repeated setup.

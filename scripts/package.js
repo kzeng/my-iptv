@@ -140,8 +140,6 @@ function buildZip(srcDir, dstPath) {
   if (process.platform === 'darwin') {
     execSync(`ditto -c -k --sequesterRsrc --keepParent "${srcDir}" "${dstPath}"`)
   } else {
-    const { createWriteStream } = require('fs')
-    const archiver = require('archiver')
     // fallback: use zip command if available
     try {
       execSync(`zip -r "${dstPath}" "${path.basename(srcDir)}"`, { cwd: path.dirname(srcDir) })
