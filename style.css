@@ -27,8 +27,18 @@ body {
 }
 
 #logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   padding: 16px 20px;
   border-bottom: 1px solid #0f3460;
+}
+
+#logo img {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  flex-shrink: 0;
 }
 
 #logo h1 {
@@ -330,7 +340,7 @@ body {
 }
 
 #status-actions { display: flex; gap: 4px; }
-#settings-btn, #refresh-btn {
+#about-btn, #settings-btn, #refresh-btn {
   background: none;
   border: 1px solid #0f3460;
   color: #9ca3af;
@@ -339,9 +349,10 @@ body {
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
+  font-weight: 600;
   transition: all 0.2s;
 }
-#settings-btn:hover, #refresh-btn:hover {
+#about-btn:hover, #settings-btn:hover, #refresh-btn:hover {
   border-color: #e94560;
   color: #e94560;
 }
@@ -357,7 +368,7 @@ body {
 }
 .overlay.hidden { display: none; }
 
-#settings-panel {
+#settings-panel, #about-panel {
   background: #16213e;
   border: 1px solid #0f3460;
   border-radius: 10px;
@@ -368,7 +379,7 @@ body {
   box-shadow: 0 8px 32px rgba(0,0,0,0.5);
 }
 
-#settings-header {
+#settings-header, #about-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -392,6 +403,62 @@ body {
   padding: 16px 20px;
   overflow-y: auto;
   flex: 1;
+}
+
+#about-panel {
+  width: 380px;
+}
+
+#about-body {
+  padding: 22px 24px 24px;
+  text-align: center;
+}
+
+#about-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  display: block;
+  margin: 0 auto 14px;
+}
+
+#about-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin-bottom: 18px;
+}
+
+#about-details {
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+
+#about-details div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  align-items: start;
+  font-size: 13px;
+}
+
+#about-details dt {
+  color: #6b7280;
+}
+
+#about-details dd {
+  color: #e0e0e0;
+  overflow-wrap: anywhere;
+}
+
+#about-details a {
+  color: #62d8ff;
+  text-decoration: none;
+}
+
+#about-details a:hover {
+  text-decoration: underline;
 }
 
 .setting-row {

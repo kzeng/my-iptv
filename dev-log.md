@@ -70,3 +70,9 @@ Recommended behavior:
 - Do not store logo images directly in SQLite BLOB columns.
 - Keep all SQLite access in the Electron main process; expose only focused IPC methods to the renderer.
 - If using a native SQLite package such as `better-sqlite3`, validate Electron packaging early because native modules can affect build and release workflows.
+
+
+### Play list
+https://live.zbds.top/tv/iptv4.m3u
+https://iptv-org.github.io/iptv/index.m3u
+

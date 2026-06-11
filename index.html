@@ -11,6 +11,7 @@
   <div id="app">
     <aside id="sidebar">
       <div id="logo">
+        <img src="assets/my-iptv-logo.png" alt="" />
         <h1>My IPTV</h1>
       </div>
       <div id="controls">
@@ -27,6 +28,7 @@
       <div id="status-bar">
         <span id="channel-count">0 channels</span>
         <div id="status-actions">
+          <button id="about-btn" title="About My IPTV">i</button>
           <button id="settings-btn" title="Tuning settings">⚙</button>
           <button id="refresh-btn" title="Refresh channels">↻</button>
         </div>
@@ -92,6 +94,36 @@
       <div id="settings-footer">
         <button id="settings-reset" class="btn-secondary">Reset Defaults</button>
         <button id="settings-apply" class="btn-primary">Apply & Close</button>
+      </div>
+    </div>
+  </div>
+  <div id="about-overlay" class="overlay hidden">
+    <div id="about-panel">
+      <div id="about-header">
+        <span>About My IPTV</span>
+        <button id="about-close" class="close-btn">×</button>
+      </div>
+      <div id="about-body">
+        <img id="about-logo" src="assets/my-iptv-logo.png" alt="" />
+        <div id="about-title">My IPTV</div>
+        <dl id="about-details">
+          <div>
+            <dt>Version</dt>
+            <dd>1.0.0</dd>
+          </div>
+          <div>
+            <dt>Application</dt>
+            <dd>My IPTV</dd>
+          </div>
+          <div>
+            <dt>Author</dt>
+            <dd><a href="mailto:zengkai001@gmail.com">zengkai001@gmail.com</a></dd>
+          </div>
+          <div>
+            <dt>Project</dt>
+            <dd><a href="https://github.com/kzeng/my-iptv" target="_blank" rel="noreferrer">https://github.com/kzeng/my-iptv</a></dd>
+          </div>
+        </dl>
       </div>
     </div>
   </div>

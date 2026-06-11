@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, session, dialog, Menu } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const http = require('http')
@@ -9,6 +9,7 @@ const LAST_CHANNEL_FILE = path.join(app.getPath('userData'), 'last-channel.json'
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json')
 const PORT = 12999
 const ROOT = __dirname
+const APP_ICON = path.join(ROOT, 'assets', 'my-iptv-logo.png')
 
 let mainWindow
 let server
@@ -173,6 +174,8 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     title: 'My IPTV',
+    icon: APP_ICON,
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -181,6 +184,7 @@ function createWindow() {
     },
   })
 
+  mainWindow.setMenuBarVisibility(false)
   mainWindow.loadURL(`http://127.0.0.1:${PORT}/index.html`)
 
   if (process.argv.includes('--dev')) {
@@ -189,6 +193,8 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null)
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {

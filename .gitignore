@@ -9,6 +9,7 @@ channels.json
 
 # Release artifacts
 release/
+release-slim/
 
 # OS files
 .DS_Store

@@ -4,21 +4,34 @@ const { execSync } = require('child_process')
 
 const ROOT = path.join(__dirname, '..')
 const ELECTRON_DIST = path.join(ROOT, 'node_modules', 'electron', 'dist')
-const RELEASE = path.join(ROOT, 'release')
+const RELEASE = process.env.MY_IPTV_RELEASE_DIR
+  ? path.resolve(ROOT, process.env.MY_IPTV_RELEASE_DIR)
+  : path.join(ROOT, 'release')
 const APP_NAME = 'My IPTV'
-const APP_FILES = ['main.js', 'preload.js', 'index.html', 'style.css', 'app.js', 'channels.json', 'channels.m3u', 'package.json']
+const APP_FILES = ['main.js', 'preload.js', 'index.html', 'style.css', 'app.js', 'channels.json', 'package.json']
 const APP_DIRS = [
+  { src: 'assets', dst: 'assets' },
   { src: 'lib', dst: 'lib' },
-  { src: path.join('node_modules', 'hls.js'), dst: path.join('node_modules', 'hls.js') },
 ]
+const PRUNE_APP_PATHS = ['channels.m3u', 'node_modules']
 
 const platform = process.platform
 
 function rmrf(dir) {
   if (fs.existsSync(dir)) {
-    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (e) {
-      try { execSync(`rm -rf "${dir}"`) } catch {}
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  }
+}
+
+function rmrfIfPossible(dir) {
+  try {
+    rmrf(dir)
+  } catch (e) {
+    if (e.code === 'EPERM') {
+      console.warn(`Cannot clean ${dir}; existing files will be overwritten where possible.`)
+      return
     }
+    throw e
   }
 }
 
@@ -37,6 +50,35 @@ function cp(src, dst) {
   } else {
     fs.mkdirSync(path.dirname(dst), { recursive: true })
     fs.copyFileSync(src, dst)
+  }
+}
+
+function replaceExecutable(src, dst) {
+  try {
+    rmrf(dst)
+    fs.copyFileSync(src, dst)
+  } catch (e) {
+    if (e.code === 'EPERM' && fs.existsSync(dst)) {
+      console.warn(`Cannot replace ${dst}; keeping existing executable. Close the app before rebuilding to refresh it.`)
+    } else {
+      throw e
+    }
+  }
+}
+
+function copyElectronDist(appDir, executableName) {
+  fs.mkdirSync(appDir, { recursive: true })
+  rmrfIfPossible(path.join(appDir, executableName))
+
+  for (const entry of fs.readdirSync(ELECTRON_DIST, { withFileTypes: true })) {
+    if (entry.name === executableName) continue
+    cp(path.join(ELECTRON_DIST, entry.name), path.join(appDir, entry.name))
+  }
+}
+
+function pruneAppResources(appResources) {
+  for (const p of PRUNE_APP_PATHS) {
+    rmrfIfPossible(path.join(appResources, p))
   }
 }
 
@@ -85,17 +127,12 @@ function buildWin() {
   const resourcesDir = path.join(appDir, 'resources')
   const appResources = path.join(resourcesDir, 'app')
 
-  rmrf(appDir)
+  copyElectronDist(appDir, 'electron.exe')
+  replaceExecutable(path.join(ELECTRON_DIST, 'electron.exe'), path.join(appDir, `${APP_NAME}.exe`))
+  rmrfIfPossible(path.join(resourcesDir, 'default_app.asar'))
+  rmrfIfPossible(appResources)
   fs.mkdirSync(appResources, { recursive: true })
-
-  cp(path.join(ELECTRON_DIST, 'electron.exe'), path.join(appDir, `${APP_NAME}.exe`))
-  if (fs.existsSync(path.join(ELECTRON_DIST, 'ffmpeg.dll'))) {
-    cp(path.join(ELECTRON_DIST, 'ffmpeg.dll'), path.join(appDir, 'ffmpeg.dll'))
-  }
-  for (const f of ['LICENSE', 'LICENSES.chromium.html', 'version']) {
-    const src = path.join(ELECTRON_DIST, f)
-    if (fs.existsSync(src)) cp(src, path.join(appDir, f))
-  }
+  pruneAppResources(appResources)
 
   for (const f of APP_FILES) {
     cp(path.join(ROOT, f), path.join(appResources, f))
@@ -115,13 +152,12 @@ function buildLinux() {
   const appResources = path.join(resourcesDir, 'app')
 
   rmrf(appDir)
+  copyElectronDist(appDir, 'electron')
+  replaceExecutable(path.join(ELECTRON_DIST, 'electron'), path.join(appDir, APP_NAME))
+  rmrfIfPossible(path.join(resourcesDir, 'default_app.asar'))
+  rmrfIfPossible(appResources)
   fs.mkdirSync(appResources, { recursive: true })
-
-  cp(path.join(ELECTRON_DIST, 'electron'), path.join(appDir, APP_NAME))
-  for (const f of ['LICENSE', 'LICENSES.chromium.html', 'version']) {
-    const src = path.join(ELECTRON_DIST, f)
-    if (fs.existsSync(src)) cp(src, path.join(appDir, f))
-  }
+  pruneAppResources(appResources)
 
   for (const f of APP_FILES) {
     cp(path.join(ROOT, f), path.join(appResources, f))
@@ -139,6 +175,12 @@ function buildLinux() {
 function buildZip(srcDir, dstPath) {
   if (process.platform === 'darwin') {
     execSync(`ditto -c -k --sequesterRsrc --keepParent "${srcDir}" "${dstPath}"`)
+  } else if (process.platform === 'win32') {
+    try {
+      execSync(`powershell -NoProfile -Command "Compress-Archive -LiteralPath '${srcDir}' -DestinationPath '${dstPath}' -Force"`)
+    } catch {
+      console.warn('Compress-Archive not available, skipping ZIP')
+    }
   } else {
     // fallback: use zip command if available
     try {
@@ -150,7 +192,6 @@ function buildZip(srcDir, dstPath) {
 }
 
 function main() {
-  rmrf(RELEASE)
   fs.mkdirSync(RELEASE, { recursive: true })
 
   if (platform === 'darwin') {

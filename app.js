@@ -398,6 +398,19 @@ document.getElementById('settings-apply').addEventListener('click', async () => 
   if (currentChannel) playChannel(currentChannel)
 })
 
+document.getElementById('about-btn').addEventListener('click', () => {
+  document.getElementById('about-overlay').classList.remove('hidden')
+})
+
+document.getElementById('about-close').addEventListener('click', () => {
+  document.getElementById('about-overlay').classList.add('hidden')
+})
+
+document.getElementById('about-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('about-overlay'))
+    document.getElementById('about-overlay').classList.add('hidden')
+})
+
 document.getElementById('refresh-btn').addEventListener('click', async () => {
   channelList.innerHTML = '<div class="empty-msg">Loading channels...</div>'
   try {
