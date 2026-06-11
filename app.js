@@ -1,6 +1,8 @@
 const PROXY_BASE = 'http://127.0.0.1:12999/proxy?url='
 
 const DEFAULT_SETTINGS = {
+  theme: 'dark',
+  language: 'zh',
   maxBufferLength: 90,
   maxMaxBufferLength: 300,
   maxBufferSize: 200,
@@ -22,12 +24,164 @@ let showFavoritesOnly = false
 let selectedGroup = ''
 let hls = null
 
+const I18N = {
+  zh: {
+    searchPlaceholder: '筛选频道...',
+    sortName: '名称',
+    favorites: '收藏',
+    allGroups: '全部分组',
+    aboutTitle: '关于 My IPTV',
+    settingsTitle: '设置',
+    refreshTitle: '更新频道',
+    selectChannel: '选择频道开始观看',
+    screenshot: '截图',
+    screenshotTitle: '截图保存 PNG',
+    record: '录制',
+    stop: '停止',
+    recordTitle: '录制视频',
+    noChannel: '未选择频道',
+    settingsHeader: '设置',
+    themeLabel: '主题',
+    themeDark: '深色',
+    themeLight: '浅色',
+    languageLabel: '语言',
+    languageZh: '中文',
+    languageEn: 'English',
+    maxBufferLength: '最大缓冲时长 (秒)',
+    maxBufferSize: '最大缓冲大小 (MB)',
+    startLevel: '初始码率层级',
+    fragRetry: '分片加载重试',
+    fragTimeout: '分片超时 (毫秒)',
+    enableWorker: '启用 Web Worker',
+    capPlayerSize: '限制到播放器尺寸',
+    preloadNext: '预加载下一分片',
+    resetDefaults: '恢复默认',
+    applyClose: '应用并关闭',
+    aboutHeader: '关于 My IPTV',
+    version: '版本',
+    application: '应用名称',
+    author: '作者',
+    project: '项目',
+    noChannelsFound: '没有找到频道',
+    loadingChannels: '正在加载频道...',
+    updatingDb: '正在更新频道数据库...',
+    updateFailed: '频道更新失败',
+    loadFailed: '频道加载失败，请检查网络。',
+    refreshFailed: '刷新失败',
+    channels: '个频道',
+    clickToPlay: '点击播放：',
+    stream: '直播流：',
+    streamOffline: ' - 频道可能不可用',
+    unsupportedStream: '不支持的流：',
+    error: '错误：',
+    retry: '重试',
+    screenshotFile: 'screenshot.png',
+    recordingFile: 'recording.webm',
+    netOk: '网络正常',
+    netOkHttp: '网络正常 (HTTP)',
+    netFail: '网络失败：',
+  },
+  en: {
+    searchPlaceholder: 'Filter channels...',
+    sortName: 'Name',
+    favorites: 'Favorites',
+    allGroups: 'All Groups',
+    aboutTitle: 'About My IPTV',
+    settingsTitle: 'Settings',
+    refreshTitle: 'Refresh channels',
+    selectChannel: 'Select a channel to start watching',
+    screenshot: 'Screenshot',
+    screenshotTitle: 'Screenshot (save PNG)',
+    record: 'Record',
+    stop: 'Stop',
+    recordTitle: 'Record video',
+    noChannel: 'No channel selected',
+    settingsHeader: 'Settings',
+    themeLabel: 'Theme',
+    themeDark: 'Dark',
+    themeLight: 'Light',
+    languageLabel: 'Language',
+    languageZh: '中文',
+    languageEn: 'English',
+    maxBufferLength: 'Max Buffer Length (s)',
+    maxBufferSize: 'Max Buffer Size (MB)',
+    startLevel: 'Start Level (bitrate)',
+    fragRetry: 'Fragment Loading Retry',
+    fragTimeout: 'Fragment Timeout (ms)',
+    enableWorker: 'Enable Web Worker',
+    capPlayerSize: 'Cap to Player Size',
+    preloadNext: 'Preload Next Fragment',
+    resetDefaults: 'Reset Defaults',
+    applyClose: 'Apply & Close',
+    aboutHeader: 'About My IPTV',
+    version: 'Version',
+    application: 'Application',
+    author: 'Author',
+    project: 'Project',
+    noChannelsFound: 'No channels found',
+    loadingChannels: 'Loading channels...',
+    updatingDb: 'Updating channel database...',
+    updateFailed: 'Failed to update channels',
+    loadFailed: 'Failed to load channels. Check connection.',
+    refreshFailed: 'refresh failed',
+    channels: 'channels',
+    clickToPlay: 'Click to play: ',
+    stream: 'Stream: ',
+    streamOffline: ' - stream may be offline',
+    unsupportedStream: 'Unsupported stream: ',
+    error: 'Error: ',
+    retry: 'Retry',
+    screenshotFile: 'screenshot.png',
+    recordingFile: 'recording.webm',
+    netOk: 'net OK',
+    netOkHttp: 'net OK (http)',
+    netFail: 'net FAIL: ',
+  },
+}
+
 const video = document.getElementById('video-player')
 const channelList = document.getElementById('channel-list')
 const searchInput = document.getElementById('search')
 const channelNameDisplay = document.getElementById('channel-name')
 const channelCount = document.getElementById('channel-count')
 const videoContainer = document.getElementById('video-container')
+
+function lang() {
+  return settings.language === 'en' ? 'en' : 'zh'
+}
+
+function t(key) {
+  return I18N[lang()][key] || I18N.zh[key] || key
+}
+
+function formatChannelCount(count) {
+  return lang() === 'zh' ? `${count} ${t('channels')}` : `${count} ${t('channels')}`
+}
+
+function applyTheme() {
+  document.body.classList.toggle('light-theme', settings.theme === 'light')
+}
+
+function applyLanguage() {
+  document.documentElement.lang = lang() === 'zh' ? 'zh-CN' : 'en'
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    el.textContent = t(el.dataset.i18n)
+  })
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    el.title = t(el.dataset.i18nTitle)
+  })
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    el.placeholder = t(el.dataset.i18nPlaceholder)
+  })
+  const recordBtn = document.getElementById('btn-record')
+  if (recordBtn) recordBtn.textContent = recordBtn.classList.contains('recording') ? t('stop') : t('record')
+  if (!currentChannel) channelNameDisplay.textContent = t('noChannel')
+}
+
+function applyAppearance() {
+  applyTheme()
+  applyLanguage()
+}
 
 async function loadChannels() {
   return window.iptvAPI.getChannels()
@@ -41,7 +195,7 @@ async function refreshChannels() {
 function renderChannels(list) {
   channelList.innerHTML = ''
   if (list.length === 0) {
-    channelList.innerHTML = '<div class="empty-msg">No channels found</div>'
+    channelList.innerHTML = `<div class="empty-msg">${t('noChannelsFound')}</div>`
     return
   }
   const frag = document.createDocumentFragment()
@@ -79,7 +233,7 @@ function applyFilterAndSort() {
   r.sort((a, b) => a.name.localeCompare(b.name))
   filteredChannels = r
   renderChannels(filteredChannels)
-  channelCount.textContent = `${filteredChannels.length} channels`
+  channelCount.textContent = formatChannelCount(filteredChannels.length)
 }
 
 function updateActiveChannel() {
@@ -102,7 +256,7 @@ function showError(msg, isRetryable) {
   if (isRetryable && currentChannel) {
     const btn = document.createElement('button')
     btn.className = 'retry-btn'
-    btn.textContent = 'Retry'
+    btn.textContent = t('retry')
     btn.onclick = () => { clearError(); playChannel(currentChannel) }
     el.appendChild(btn)
   }
@@ -165,7 +319,7 @@ function playChannel(ch) {
           setTimeout(() => { video.muted = false }, 500)
         }).catch((e) => {
           if (ch.url !== currentChannel?.url) return
-          showError('Click to play: ' + e.message, true)
+          showError(t('clickToPlay') + e.message, true)
           video.muted = false
           video.classList.add('visible')
         })
@@ -175,9 +329,9 @@ function playChannel(ch) {
           const code = data.response ? data.response.code : ''
           const detail = data.details || data.type || 'unknown'
           const prefix = code ? 'HTTP ' + code + ' (' + detail + ')' : detail
-          const hint = data.details && data.details.includes('LoadError') ? ' - stream may be offline' : ''
+          const hint = data.details && data.details.includes('LoadError') ? t('streamOffline') : ''
           window.iptvAPI.updateChannelHealth(ch.url, 'error', prefix)
-          showError('Stream: ' + prefix + hint, true)
+          showError(t('stream') + prefix + hint, true)
         }
       })
     } else {
@@ -190,13 +344,13 @@ function playChannel(ch) {
       }).catch((e) => {
         if (ch.url !== currentChannel?.url) return
         window.iptvAPI.updateChannelHealth(ch.url, 'error', e.message)
-        showError('Unsupported stream: ' + e.message)
+        showError(t('unsupportedStream') + e.message)
       })
     }
 
     updateActiveChannel()
   } catch (err) {
-    showError('Error: ' + err.message)
+    showError(t('error') + err.message)
   }
 }
 
@@ -219,7 +373,7 @@ async function takeScreenshot() {
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1]
       await window.iptvAPI.saveFile(
-        { defaultName: 'screenshot.png', filters: [{ name: 'PNG', extensions: ['png'] }] },
+        { defaultName: t('screenshotFile'), filters: [{ name: 'PNG', extensions: ['png'] }] },
         base64
       )
     }
@@ -252,21 +406,21 @@ function startRecording() {
   }
   mediaRecorder.onstop = async () => {
     document.getElementById('btn-record').classList.remove('recording')
-    document.getElementById('btn-record').textContent = '⏺ Record'
+    document.getElementById('btn-record').textContent = t('record')
     const blob = new Blob(recordedChunks, { type: 'video/webm' })
     if (blob.size === 0) return
     const reader = new FileReader()
     reader.onload = async () => {
       const base64 = reader.result.split(',')[1]
       await window.iptvAPI.saveFile(
-        { defaultName: 'recording.webm', filters: [{ name: 'WebM', extensions: ['webm'] }] },
+        { defaultName: t('recordingFile'), filters: [{ name: 'WebM', extensions: ['webm'] }] },
         base64
       )
     }
     reader.readAsDataURL(blob)
   }
   mediaRecorder.start()
-  document.getElementById('btn-record').textContent = '⏹ Stop'
+  document.getElementById('btn-record').textContent = t('stop')
   document.getElementById('btn-record').classList.add('recording')
 }
 
@@ -286,6 +440,71 @@ channelList.addEventListener('click', (e) => {
 
 searchInput.addEventListener('input', applyFilterAndSort)
 
+function isTypingTarget(target) {
+  if (!target) return false
+  const tag = target.tagName
+  return target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+}
+
+function hasOpenOverlay() {
+  return !document.getElementById('settings-overlay').classList.contains('hidden') ||
+    !document.getElementById('about-overlay').classList.contains('hidden')
+}
+
+function currentChannelIndex() {
+  if (!filteredChannels.length) return -1
+  if (!currentChannel) return -1
+  return filteredChannels.findIndex((c) => c.url === currentChannel.url)
+}
+
+function playChannelByOffset(offset) {
+  if (!filteredChannels.length) return
+  const currentIndex = currentChannelIndex()
+  const baseIndex = currentIndex === -1 ? 0 : currentIndex
+  const nextIndex = Math.min(Math.max(baseIndex + offset, 0), filteredChannels.length - 1)
+  playChannel(filteredChannels[nextIndex])
+  const active = channelList.querySelector(`.channel-item[data-url="${CSS.escape(filteredChannels[nextIndex].url)}"]`)
+  if (active) active.scrollIntoView({ block: 'nearest' })
+}
+
+function toggleVideoPlayback() {
+  if (!video.classList.contains('visible')) return
+  if (video.paused) {
+    video.play().catch(() => {})
+  } else {
+    video.pause()
+  }
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {})
+  } else {
+    videoContainer.requestFullscreen().catch(() => {})
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (isTypingTarget(e.target) || hasOpenOverlay()) return
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    playChannelByOffset(-1)
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    playChannelByOffset(1)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    if (currentChannel) playChannel(currentChannel)
+    else if (filteredChannels.length > 0) playChannel(filteredChannels[0])
+  } else if (e.key === ' ') {
+    e.preventDefault()
+    toggleVideoPlayback()
+  } else if (e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    toggleFullscreen()
+  }
+})
+
 function populateGroupFilter() {
   const groups = new Set()
   for (const c of channels) {
@@ -298,7 +517,7 @@ function populateGroupFilter() {
   }
   const sel = document.getElementById('group-filter')
   const current = sel.value
-  sel.innerHTML = '<option value="">All Groups</option>'
+  sel.innerHTML = `<option value="">${t('allGroups')}</option>`
   for (const g of [...groups].sort()) {
     const opt = document.createElement('option')
     opt.value = g
@@ -321,6 +540,8 @@ document.getElementById('group-filter').addEventListener('change', () => {
 
 function populateSettingsPanel() {
   const s = { ...DEFAULT_SETTINGS, ...settings }
+  document.getElementById('s-theme').value = s.theme
+  document.getElementById('s-language').value = s.language
   document.getElementById('s-maxBufferLength').value = s.maxBufferLength
   document.getElementById('s-maxBufferSize').value = s.maxBufferSize
   document.getElementById('s-startLevel').value = s.startLevel
@@ -333,6 +554,8 @@ function populateSettingsPanel() {
 
 function readSettingsPanel() {
   return {
+    theme: document.getElementById('s-theme').value || DEFAULT_SETTINGS.theme,
+    language: document.getElementById('s-language').value || DEFAULT_SETTINGS.language,
     maxBufferLength: parseInt(document.getElementById('s-maxBufferLength').value) || DEFAULT_SETTINGS.maxBufferLength,
     maxBufferSize: parseInt(document.getElementById('s-maxBufferSize').value) || DEFAULT_SETTINGS.maxBufferSize,
     startLevel: parseInt(document.getElementById('s-startLevel').value) || DEFAULT_SETTINGS.startLevel,
@@ -359,12 +582,16 @@ document.getElementById('settings-overlay').addEventListener('click', (e) => {
 })
 
 document.getElementById('settings-reset').addEventListener('click', () => {
-  settings = {}
+  settings = { ...DEFAULT_SETTINGS }
+  applyAppearance()
   populateSettingsPanel()
 })
 
 document.getElementById('settings-apply').addEventListener('click', async () => {
   settings = readSettingsPanel()
+  applyAppearance()
+  populateGroupFilter()
+  applyFilterAndSort()
   await window.iptvAPI.saveSettings(settings)
   document.getElementById('settings-overlay').classList.add('hidden')
   if (hls) { hls.destroy(); hls = null }
@@ -385,7 +612,7 @@ document.getElementById('about-overlay').addEventListener('click', (e) => {
 })
 
 document.getElementById('refresh-btn').addEventListener('click', async () => {
-  channelList.innerHTML = '<div class="empty-msg">Updating channel database...</div>'
+  channelList.innerHTML = `<div class="empty-msg">${t('updatingDb')}</div>`
   try {
     channels = await refreshChannels()
     populateGroupFilter()
@@ -393,23 +620,23 @@ document.getElementById('refresh-btn').addEventListener('click', async () => {
   } catch (e) {
     if (channels.length > 0) {
       applyFilterAndSort()
-      channelCount.textContent = `${filteredChannels.length} channels | refresh failed`
+      channelCount.textContent = `${formatChannelCount(filteredChannels.length)} | ${t('refreshFailed')}`
       return
     }
-    channelList.innerHTML = '<div class="empty-msg" style="color:#e94560;">Failed to update channels</div>'
+    channelList.innerHTML = `<div class="empty-msg" style="color:#e94560;">${t('updateFailed')}</div>`
   }
 })
 
 async function testNetwork() {
   try {
     const res = await fetch('https://clients3.google.com/generate_204', { mode: 'no-cors' })
-    return 'net OK'
+    return t('netOk')
   } catch {
     try {
       const res = await fetch('http://example.com', { mode: 'no-cors' })
-      return 'net OK (http)'
+      return t('netOkHttp')
     } catch (e) {
-      return 'net FAIL: ' + e.message
+      return t('netFail') + e.message
     }
   }
 }
@@ -418,23 +645,24 @@ async function init() {
   try { favorites = await window.iptvAPI.getFavorites() } catch {}
   try {
     const saved = await window.iptvAPI.getSettings()
-    if (saved) settings = saved
+    settings = { ...DEFAULT_SETTINGS, ...(saved || {}) }
   } catch {}
-  channelList.innerHTML = '<div class="empty-msg">Loading channels...</div>'
+  applyAppearance()
+  channelList.innerHTML = `<div class="empty-msg">${t('loadingChannels')}</div>`
   try {
     channels = await loadChannels()
     if (channels.length === 0) {
-      channelList.innerHTML = '<div class="empty-msg">Updating channel database...</div>'
+      channelList.innerHTML = `<div class="empty-msg">${t('updatingDb')}</div>`
       channels = await refreshChannels()
     }
     populateGroupFilter()
   } catch {
-    channelList.innerHTML = '<div class="empty-msg" style="color:#e94560;">Failed to load channels. Check connection.</div>'
+    channelList.innerHTML = `<div class="empty-msg" style="color:#e94560;">${t('loadFailed')}</div>`
     return
   }
   applyFilterAndSort()
   const net = await testNetwork()
-  channelCount.textContent = `${filteredChannels.length} channels | ${net}`
+  channelCount.textContent = `${formatChannelCount(filteredChannels.length)} | ${net}`
   if (channels.length > 0) {
     let restored = false
     try {

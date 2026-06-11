@@ -102,7 +102,8 @@ body {
   border-color: #e94560;
 }
 
-#group-filter {
+#group-filter,
+.setting-row select {
   flex: 1;
   min-width: 0;
   padding: 6px 8px;
@@ -115,7 +116,8 @@ body {
   outline: none;
 }
 
-#group-filter:focus {
+#group-filter:focus,
+.setting-row select:focus {
   border-color: #e94560;
 }
 
@@ -482,6 +484,10 @@ body {
   outline: none;
 }
 .setting-row input[type="number"]:focus { border-color: #e94560; }
+.setting-row select {
+  width: 140px;
+  flex: 0 0 140px;
+}
 .checkbox-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
@@ -544,4 +550,80 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+body.light-theme {
+  background: #f4f6fb;
+  color: #1f2937;
+}
+
+body.light-theme #sidebar,
+body.light-theme #settings-panel,
+body.light-theme #about-panel,
+body.light-theme #now-playing {
+  background: #ffffff;
+  border-color: #d8dee9;
+}
+
+body.light-theme #logo,
+body.light-theme #controls,
+body.light-theme #status-bar,
+body.light-theme #settings-header,
+body.light-theme #about-header,
+body.light-theme #settings-footer {
+  border-color: #d8dee9;
+}
+
+body.light-theme #player-area {
+  background: #edf1f7;
+}
+
+body.light-theme #search,
+body.light-theme #group-filter,
+body.light-theme .setting-row select,
+body.light-theme .setting-row input[type="number"] {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1f2937;
+}
+
+body.light-theme #search::placeholder,
+body.light-theme #status-bar,
+body.light-theme #about-details dt,
+body.light-theme #channel-info,
+body.light-theme .empty-msg,
+body.light-theme .close-btn {
+  color: #64748b;
+}
+
+body.light-theme .sort-btn,
+body.light-theme #about-btn,
+body.light-theme #settings-btn,
+body.light-theme #refresh-btn,
+body.light-theme .btn-secondary {
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+body.light-theme .sort-btn:hover,
+body.light-theme #about-btn:hover,
+body.light-theme #settings-btn:hover,
+body.light-theme #refresh-btn:hover,
+body.light-theme .btn-secondary:hover {
+  border-color: #e94560;
+  color: #d63850;
+}
+
+body.light-theme .channel-item:hover {
+  background: #f1f5f9;
+}
+
+body.light-theme .channel-item .ch-logo {
+  background: #e2e8f0;
+}
+
+body.light-theme #about-title,
+body.light-theme #about-details dd,
+body.light-theme #channel-name {
+  color: #1f2937;
 }
