@@ -55,6 +55,7 @@ Electron IPTV player with HLS streaming proxy, favorites, group filtering, and t
 | Git repo bloat (112MB) | `release/` directory committed | Re-initialized repo with `.gitignore`, reduced to 924KB |
 | Empty channel list on launch | `channels.json` not generated | `build:m3u` script auto-creates it during build |
 | Last channel not remembered | No persistence logic | Save/restore `last-channel.json` via IPC |
+| Packaged app crashes on launch (icudtl.dat) | `fs.cpSync` resolves Framework relative symlinks to absolute paths | Custom `cp()` with `fs.lstatSync` preserves relative symlinks |
 
 ### Completed Optimizations
 
@@ -66,10 +67,12 @@ Electron IPTV player with HLS streaming proxy, favorites, group filtering, and t
 - **M3U Pre-compilation** — ~10018 channels from M3U to JSON, launch time from seconds to milliseconds
 - **Error Handling** — dismissable popup with Retry, automatic stale error filtering
 - **Configurable Settings** — all HLS.js optimization parameters adjustable via UI panel at runtime
+- **Proxy Bypass** — TS/m4s/aac segments go direct to CDN; only M3U8 goes through proxy for URL rewriting
+- **Cross-platform Build Script** — auto-detects platform, packages as native format (macOS .app, Windows .exe, Linux ELF), preserves Framework symlinks
 
 ### Future Optimizations
 
-- [ ] Proxy bypass: let TS/m4s/aac segments connect directly to CDN (reduce latency)
+
 - [ ] Multi-select group filter
 - [ ] EPG integration
 - [ ] Keyboard shortcuts (arrow keys for channels, space for pause, etc.)

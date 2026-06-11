@@ -206,7 +206,11 @@ app.whenReady().then(async () => {
       return
     }
     if (url.includes('.m3u8') || url.includes('.ts') || url.includes('.m4s') || url.includes('.aac')) {
-      callback({ redirectURL: `http://127.0.0.1:${PORT}/proxy?url=${encodeURIComponent(url)}` })
+      if (url.includes('.m3u8')) {
+        callback({ redirectURL: `http://127.0.0.1:${PORT}/proxy?url=${encodeURIComponent(url)}` })
+      } else {
+        callback({})
+      }
       return
     }
     callback({})

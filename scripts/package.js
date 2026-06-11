@@ -15,13 +15,25 @@ const APP_DIRS = [
 const platform = process.platform
 
 function rmrf(dir) {
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true })
+  if (fs.existsSync(dir)) {
+    try { fs.rmSync(dir, { recursive: true, force: true }) } catch (e) {
+      try { execSync(`rm -rf "${dir}"`) } catch {}
+    }
+  }
 }
 
 function cp(src, dst) {
-  const stat = fs.statSync(src)
-  if (stat.isDirectory()) {
-    fs.cpSync(src, dst, { recursive: true })
+  const stat = fs.lstatSync(src)
+  if (stat.isSymbolicLink()) {
+    const target = fs.readlinkSync(src)
+    fs.mkdirSync(path.dirname(dst), { recursive: true })
+    try { fs.unlinkSync(dst) } catch {}
+    fs.symlinkSync(target, dst)
+  } else if (stat.isDirectory()) {
+    fs.mkdirSync(dst, { recursive: true })
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      cp(path.join(src, entry.name), path.join(dst, entry.name))
+    }
   } else {
     fs.mkdirSync(path.dirname(dst), { recursive: true })
     fs.copyFileSync(src, dst)
