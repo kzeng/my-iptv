@@ -1,78 +1,158 @@
-# Development Log
+# 开发日志
 
-## SQLite Channel Store and Logo Cache Proposal
+## 当前版本
 
-### Goal
+- 标签：`v1.0.0`
+- 发布地址：https://github.com/kzeng/my-iptv/releases/tag/v1.0.0
+- 最新发布页：https://github.com/kzeng/my-iptv/releases
 
-Improve channel list management, startup speed, search/filter behavior, and logo loading performance by replacing the current in-memory-only channel list flow with a persistent metadata store and a file-based logo cache.
+## 已完成能力
 
-### Decision
+### 播放与代理
 
-- Use SQLite to manage channel metadata, favorites, playback history, health status, and cache indexes.
-- Store logo images as files on disk instead of SQLite BLOBs.
-- Keep SQLite as the metadata and lookup layer; keep the filesystem as the binary asset cache.
+- 使用 HLS.js 播放 `.m3u8` 直播流，支持 ABR 自动码率选择。
+- 内置本地 HTTP 代理，端口 `12999`。
+- 代理会重写 M3U8 中的相对 URL，补齐为绝对 URL。
+- 支持 3xx 重定向，最多 5 跳。
+- 支持频道级 User-Agent 和 Referer。
+- TS/m4s/aac 等媒体片段尽量直连 CDN，M3U8 通过代理重写，减少转发延迟。
 
-### Rationale
+### 频道与播放列表
 
-The current renderer loads channels from `channels.json`, `channels.m3u`, or a remote playlist into an in-memory array. This is simple, but it does not scale well for large playlists and repeated startup work.
+- 使用 SQLite 管理播放列表源、频道元数据、收藏、播放历史、健康状态和缓存索引。
+- 默认播放列表源：
+  - `https://live.zbds.top/tv/iptv4.m3u`
+  - `https://iptv-org.github.io/iptv/index.m3u`
+- 启动时优先读取 SQLite 中的频道缓存。
+- SQLite 为空时会自动刷新一次播放列表并写入数据库。
+- 刷新按钮保留为手动更新入口：拉取播放列表、解析 M3U、upsert 到 SQLite、再刷新 UI。
+- 网络刷新失败时保留已有频道，不清空本地数据库。
 
-Logo images are especially expensive when loaded directly from remote URLs:
+### Logo 缓存
 
-- Many channels can trigger many concurrent image requests.
-- Broken or slow logo URLs can repeatedly hurt scrolling and startup behavior.
-- Remote image loading provides little control over retry, expiration, size limits, or cleanup.
-- Storing logos as SQLite BLOBs would make the database large and harder to maintain.
+- Logo 图片不存入 SQLite BLOB。
+- SQLite 只保存 Logo URL、缓存 key、文件路径、内容类型、大小和访问时间。
+- 图片文件存放在用户数据目录下的 `logo-cache/`。
+- Renderer 使用本地 `/logo?url=...` 接口加载图片。
+- 主进程先查缓存，命中则直接返回本地文件；未命中时下载、保存文件并更新 SQLite。
 
-SQLite is a better fit for structured channel data and queryable state, while the filesystem is a better fit for cached binary image files.
+### 用户体验
 
-### Suggested Data Model
+- 支持频道搜索、分组筛选、收藏过滤。
+- 支持恢复上次播放频道。
+- 支持截图保存为 PNG。
+- 支持 WebM 录像。
+- 支持 HLS 参数面板，可调整缓冲、Worker、初始码率、重试次数和超时等参数。
+- 播放错误提供可关闭提示和 Retry 操作。
+- 新增应用 Logo 和 About 信息。
+- 隐藏默认菜单栏，界面更接近独立播放器。
 
-SQLite tables can include:
+### 打包与发布
 
-- `channels`: channel name, stream URL, logo URL, group title, `tvg-id`, User-Agent, Referer, source ID, enabled state.
-- `favorites`: favorite channel references and timestamps.
-- `playback_history`: recently played channels, play count, last played time.
-- `channel_health`: last success, last error, failure count, time to first frame, health score.
-- `playlist_sources`: local or remote playlist sources, last sync time, ETag, Last-Modified.
-- `logo_cache`: logo URL, local file path, content type, size, fetch status, failure count, fetched time, last used time.
+- 自定义打包脚本，按当前平台生成发布目录。
+- Windows 发布包只保留 `My IPTV.exe`，剔除重复的 `electron.exe`。
+- 仅打包运行所需依赖，避免携带完整 `node_modules`。
+- `better-sqlite3` 是 native 模块，构建前通过 `electron-rebuild` 重编译到 Electron ABI。
+- `release/`、`release-slim/`、`channels.json`、`node_modules/` 均作为构建产物忽略。
 
-Logo files should be stored under an app data cache directory, for example:
+## SQLite 设计记录
 
-```text
-userData/cache/logos/<sha256-logo-url>.<ext>
+### 目标
+
+用 SQLite 管理频道列表和播放列表，让应用启动更快、弱网更稳定，并为收藏、历史、健康状态和缓存索引提供统一数据层。
+
+### 设计决策
+
+- SQLite 负责结构化数据和查询。
+- Logo 图片走磁盘文件缓存，不直接塞进 SQLite BLOB。
+- SQLite 访问集中在 Electron 主进程。
+- Renderer 只通过 IPC 请求频道、刷新、收藏、播放历史和健康状态更新。
+
+### 主要表
+
+- `playlist_sources`：播放列表源、启用状态、优先级、最后刷新时间、状态。
+- `channels`：频道名称、播放 URL、Logo URL、分组、User-Agent、Referer、来源和启用状态。
+- `favorites`：收藏频道。
+- `play_history`：播放历史。
+- `channel_health`：播放成功、失败次数、最近错误。
+- `logo_cache`：Logo URL、缓存 key、文件路径、内容类型、大小和访问时间。
+
+### Logo 缓存行为
+
+- 先渲染频道列表，Logo 懒加载。
+- 通过本地 `/logo` 接口统一处理图片。
+- 命中缓存时返回本地文件。
+- 未命中时下载并写入磁盘。
+- 下载失败时返回空响应，让前端隐藏图片。
+- 后续可继续增加失败负缓存、TTL 和容量清理策略。
+
+## 问题与修复记录
+
+| 问题 | 原因 | 处理 |
+| --- | --- | --- |
+| HLS 播放黑屏 | M3U8 中 TS 片段路径是相对路径 | 本地代理重写 M3U8，补齐绝对 URL |
+| CORS 请求失败 | 视频 CDN 未设置跨域头 | 注入 CORS 响应头，并将 M3U8 请求重定向到本地代理 |
+| 切换频道出现 `play() interrupted` | 旧频道的 `play()` Promise 在新频道加载后拒绝 | 判断 URL 是否仍是当前频道，旧错误静默忽略 |
+| 错误弹窗无法关闭 | UI 没有关闭机制 | 添加关闭按钮和 Retry |
+| 播放卡顿 | 缓冲偏小，Worker 未启用 | 增大缓冲、启用 Worker、开启 HTTP keep-alive、调整 ABR |
+| `levelParsingError` | 固定 `startLevel: 3`，但部分源码率层数不足 | 改为 `startLevel: -1`，由 HLS.js 自动选择 |
+| 频道列表启动为空 | `channels.json` 是构建产物，未生成时不可用 | 构建时自动执行 `build:m3u` |
+| 上次播放频道未记住 | 缺少持久化 | 通过 IPC 保存和恢复 `last-channel.json` |
+| 打包后 `icudtl.dat` 报错 | Electron dist 文件复制不完整或符号链接处理不当 | 使用自定义复制逻辑保留必要结构 |
+| 发布目录重复 `electron.exe` | 复制完整 Electron dist 后又复制为应用 exe | 打包时跳过原始 `electron.exe`，只保留 `My IPTV.exe` |
+| `better-sqlite3` ABI 不匹配 | native 模块按本机 Node ABI 编译，Electron 需要不同 ABI | 使用 `@electron/rebuild` 在打包前重编译 |
+| ZIP 阶段偶发文件锁错误 | Windows 进程或 Shell 占用发布目录文件 | 构建主体保留，ZIP 失败降级为警告 |
+
+## 已完成优化
+
+- HLS 缓冲参数：`maxBufferLength` 提升到 90 秒，`maxMaxBufferLength` 为 300 秒。
+- `maxBufferSize` 提升到 200MB。
+- 开启 Web Worker，降低主线程压力。
+- HTTP keep-alive 复用连接。
+- `fragLoadingMaxRetry` 设置为 6，`fragLoadingTimeOut` 设置为 20 秒。
+- 手动刷新频道信息到 SQLite。
+- Logo 文件缓存，减少重复远程图片请求。
+- 运行依赖瘦身，只携带必要 native 模块和运行文件。
+
+## 后续规划
+
+### 功能
+
+- [ ] 播放列表源管理 UI：新增、删除、启用、禁用、排序。
+- [ ] 本地 M3U 导入。
+- [ ] EPG 电子节目指南。
+- [ ] 多源去重和同名频道聚合。
+- [ ] 同频道多线路自动切换。
+- [ ] 最近播放列表 UI。
+- [ ] 频道详情抽屉，显示 URL、UA、Referer、健康状态和最近错误。
+
+### 性能
+
+- [ ] 频道列表虚拟滚动，减少上万频道时的 DOM 压力。
+- [ ] Logo 缓存容量上限和定期清理。
+- [ ] Logo 失败负缓存，避免失效 URL 反复请求。
+- [ ] 播放列表 ETag / Last-Modified 条件请求。
+- [ ] 频道搜索索引预计算。
+
+### 用户体验
+
+- [ ] 快捷键：方向键切台、Enter 播放、Space 暂停、F 全屏。
+- [ ] 命令面板或快速切台。
+- [ ] 首次启动向导。
+- [ ] 记住音量、静音、上次筛选分组和搜索条件。
+- [ ] 深色/浅色主题。
+
+## 构建命令
+
+```bash
+npm install
+npm run build
 ```
 
-### Logo Cache Behavior
+`npm run build` 会依次执行：
 
-Recommended behavior:
+1. `electron-rebuild -f -w better-sqlite3`
+2. `node scripts/parse-m3u.js`
+3. `node scripts/package.js`
 
-- Render a lightweight placeholder first.
-- Lazy-load logos only for visible channel rows.
-- Route logo requests through a local endpoint or IPC API.
-- Check `logo_cache` before downloading.
-- On cache hit, return the local file.
-- On cache miss, download the logo, validate type/size, save it to disk, and update SQLite.
-- On failure, record a negative cache entry to avoid repeated retries.
-- Track `last_used_at` for cleanup.
-- Periodically prune old or oversized cache entries.
-
-### Implementation Steps
-
-1. Add a main-process SQLite layer for channel metadata and settings-adjacent state.
-2. Extend M3U parsing to preserve `tvg-id`, logo URL, group title, User-Agent, Referer, and source identity.
-3. Import or upsert parsed channels into SQLite during playlist sync.
-4. Replace renderer-side full-list loading with IPC queries for channels, groups, favorites, and search results.
-5. Add a file-based logo cache with local lookup, download, failure caching, and cleanup.
-6. Update the UI to lazy-load logos and avoid direct bulk remote image loading.
-
-### Notes
-
-- Do not store logo images directly in SQLite BLOB columns.
-- Keep all SQLite access in the Electron main process; expose only focused IPC methods to the renderer.
-- If using a native SQLite package such as `better-sqlite3`, validate Electron packaging early because native modules can affect build and release workflows.
-
-
-### Play list
-https://live.zbds.top/tv/iptv4.m3u
-https://iptv-org.github.io/iptv/index.m3u
-
+Windows 下如遇发布目录文件被锁定，需要关闭正在运行的 `My IPTV.exe`，并避免 PowerShell 或 Explorer 当前目录停留在 `release/` 或 `release-slim/` 内。
