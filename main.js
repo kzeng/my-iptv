@@ -295,14 +295,44 @@ function _doFetch(targetUrl, headers, res, depth) {
       })
       return
     }
-    finished = true
-    cleanup()
-    res.writeHead(status, {
-      'Content-Type': contentType,
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    let sniffedM3U8 = false
+    const chunks = []
+    proxyRes.on('data', (chunk) => {
+      chunks.push(chunk)
+      if (!sniffedM3U8 && chunks.length === 1) {
+        const head = chunk.toString('utf-8').trimStart()
+        if (head.startsWith('#EXTM3U')) {
+          sniffedM3U8 = true
+          proxyRes.removeAllListeners('data')
+          proxyRes.removeAllListeners('end')
+          proxyRes.on('data', (c) => chunks.push(c))
+          proxyRes.on('end', () => {
+            finished = true
+            cleanup()
+            const body = Buffer.concat(chunks).toString('utf-8')
+            const rewritten = rewriteM3U8(body, targetUrl)
+            res.writeHead(status, {
+              'Content-Type': 'application/vnd.apple.mpegurl',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            })
+            res.end(rewritten)
+          })
+        }
+      }
     })
-    proxyRes.pipe(res)
+    proxyRes.on('end', () => {
+      if (sniffedM3U8) return
+      finished = true
+      cleanup()
+      const body = Buffer.concat(chunks)
+      res.writeHead(status, {
+        'Content-Type': contentType,
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+      })
+      res.end(body)
+    })
   })
 
   overallTimer = setTimeout(() => {
