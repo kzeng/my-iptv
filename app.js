@@ -1,4 +1,3 @@
-const CHANNEL_SOURCES = ['channels.json', 'channels.m3u', 'https://iptv-org.github.io/iptv/index.m3u']
 const PROXY_BASE = 'http://127.0.0.1:12999/proxy?url='
 
 const DEFAULT_SETTINGS = {
@@ -30,44 +29,13 @@ const channelNameDisplay = document.getElementById('channel-name')
 const channelCount = document.getElementById('channel-count')
 const videoContainer = document.getElementById('video-container')
 
-function parseM3U(text) {
-  const lines = text.split('\n')
-  const result = []
-  let cur = null
-  for (const line of lines) {
-    const t = line.trim()
-    if (t.startsWith('#EXTINF:')) {
-      cur = { name: 'Unknown', logo: '', group: '', url: '', userAgent: '', referrer: '' }
-      const m = t.match(/,(.+)$/)
-      if (m) cur.name = m[1].trim()
-      const l = t.match(/tvg-logo="([^"]*)"/)
-      if (l) cur.logo = l[1]
-      const g = t.match(/group-title="([^"]*)"/)
-      if (g) cur.group = g[1]
-    } else if (t.startsWith('#EXTVLCOPT:http-user-agent=')) {
-      if (cur) cur.userAgent = t.slice(t.indexOf('=') + 1)
-    } else if (t.startsWith('#EXTVLCOPT:http-referrer=')) {
-      if (cur) cur.referrer = t.slice(t.indexOf('=') + 1)
-    } else if (cur && t && !t.startsWith('#')) {
-      cur.url = t
-      if (cur.url) result.push({ ...cur })
-      cur = null
-    }
-  }
-  return result
+async function loadChannels() {
+  return window.iptvAPI.getChannels()
 }
 
-async function loadM3U() {
-  for (const src of CHANNEL_SOURCES) {
-    try {
-      const res = await fetch(src)
-      if (!res.ok) continue
-      const text = await res.text()
-      if (src.endsWith('.json')) return JSON.parse(text)
-      if (text.includes('#EXTM3U')) return parseM3U(text)
-    } catch {}
-  }
-  throw new Error('Failed to load channels')
+async function refreshChannels() {
+  const result = await window.iptvAPI.refreshChannels()
+  return result.channels || []
 }
 
 function renderChannels(list) {
@@ -164,6 +132,7 @@ function playChannel(ch) {
     infoEl.textContent = parts.join(' · ')
     clearError()
     window.iptvAPI.saveLastChannel(ch.url)
+    window.iptvAPI.recordPlay(ch.url)
 
     window.iptvAPI.setChannelHeaders({
       url: ch.url,
@@ -189,6 +158,7 @@ function playChannel(ch) {
       hls.loadSource(PROXY_BASE + encodeURIComponent(ch.url))
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        window.iptvAPI.updateChannelHealth(ch.url, 'ok')
         video.classList.add('visible')
         video.muted = true
         video.play().then(() => {
@@ -206,6 +176,7 @@ function playChannel(ch) {
           const detail = data.details || data.type || 'unknown'
           const prefix = code ? 'HTTP ' + code + ' (' + detail + ')' : detail
           const hint = data.details && data.details.includes('LoadError') ? ' - stream may be offline' : ''
+          window.iptvAPI.updateChannelHealth(ch.url, 'error', prefix)
           showError('Stream: ' + prefix + hint, true)
         }
       })
@@ -214,9 +185,11 @@ function playChannel(ch) {
       video.muted = true
       video.src = ch.url
       video.play().then(() => {
+        window.iptvAPI.updateChannelHealth(ch.url, 'ok')
         setTimeout(() => { video.muted = false }, 500)
       }).catch((e) => {
         if (ch.url !== currentChannel?.url) return
+        window.iptvAPI.updateChannelHealth(ch.url, 'error', e.message)
         showError('Unsupported stream: ' + e.message)
       })
     }
@@ -412,13 +385,18 @@ document.getElementById('about-overlay').addEventListener('click', (e) => {
 })
 
 document.getElementById('refresh-btn').addEventListener('click', async () => {
-  channelList.innerHTML = '<div class="empty-msg">Loading channels...</div>'
+  channelList.innerHTML = '<div class="empty-msg">Updating channel database...</div>'
   try {
-    channels = await loadM3U()
+    channels = await refreshChannels()
     populateGroupFilter()
     applyFilterAndSort()
-  } catch {
-    channelList.innerHTML = '<div class="empty-msg" style="color:#e94560;">Failed to load channels</div>'
+  } catch (e) {
+    if (channels.length > 0) {
+      applyFilterAndSort()
+      channelCount.textContent = `${filteredChannels.length} channels | refresh failed`
+      return
+    }
+    channelList.innerHTML = '<div class="empty-msg" style="color:#e94560;">Failed to update channels</div>'
   }
 })
 
@@ -444,7 +422,11 @@ async function init() {
   } catch {}
   channelList.innerHTML = '<div class="empty-msg">Loading channels...</div>'
   try {
-    channels = await loadM3U()
+    channels = await loadChannels()
+    if (channels.length === 0) {
+      channelList.innerHTML = '<div class="empty-msg">Updating channel database...</div>'
+      channels = await refreshChannels()
+    }
     populateGroupFilter()
   } catch {
     channelList.innerHTML = '<div class="empty-msg" style="color:#e94560;">Failed to load channels. Check connection.</div>'

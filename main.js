@@ -3,6 +3,7 @@ const path = require('path')
 const fs = require('fs')
 const http = require('http')
 const https = require('https')
+const { IptvStore, parseM3U } = require('./db')
 
 const FAVORITES_FILE = path.join(app.getPath('userData'), 'favorites.json')
 const LAST_CHANNEL_FILE = path.join(app.getPath('userData'), 'last-channel.json')
@@ -13,6 +14,7 @@ const APP_ICON = path.join(ROOT, 'assets', 'my-iptv-logo.png')
 
 let mainWindow
 let server
+let store
 let pendingChannelHeaders = null
 const keepAliveAgent = new http.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 32 })
 const keepAliveAgentHttps = new https.Agent({ keepAlive: true, keepAliveMsecs: 10000, maxSockets: 32 })
@@ -63,8 +65,163 @@ const MIME = {
   '.ts': 'video/mp2t',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.svg': 'image/svg+xml',
   '.json': 'application/json',
+}
+
+function fetchText(targetUrl, headers = null, depth = 0) {
+  return new Promise((resolve, reject) => {
+    if (depth > 5) {
+      reject(new Error('Too many redirects'))
+      return
+    }
+    const isHttps = targetUrl.startsWith('https')
+    const mod = isHttps ? https : http
+    const options = new URL(targetUrl)
+    options.agent = isHttps ? keepAliveAgentHttps : keepAliveAgent
+    options.headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
+    if (headers) {
+      if (headers.userAgent) options.headers['User-Agent'] = headers.userAgent
+      if (headers.referrer) options.headers['Referer'] = headers.referrer
+    }
+
+    const req = mod.get(options, (res) => {
+      const status = res.statusCode || 200
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume()
+        fetchText(resolveUrl(targetUrl, res.headers.location), headers, depth + 1).then(resolve, reject)
+        return
+      }
+      if (status < 200 || status >= 300) {
+        res.resume()
+        reject(new Error(`HTTP ${status}`))
+        return
+      }
+      const chunks = []
+      let size = 0
+      res.on('data', (chunk) => {
+        size += chunk.length
+        if (size > 25 * 1024 * 1024) {
+          req.destroy(new Error('Response too large'))
+          return
+        }
+        chunks.push(chunk)
+      })
+      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')))
+    })
+    req.on('error', reject)
+    req.setTimeout(30000, () => req.destroy(new Error('Request timeout')))
+  })
+}
+
+function logoExtension(contentType, logoUrl) {
+  const type = (contentType || '').split(';')[0].trim().toLowerCase()
+  if (type === 'image/png') return '.png'
+  if (type === 'image/jpeg') return '.jpg'
+  if (type === 'image/webp') return '.webp'
+  if (type === 'image/svg+xml') return '.svg'
+  const ext = path.extname(new URL(logoUrl).pathname).toLowerCase()
+  if (['.png', '.jpg', '.jpeg', '.webp', '.svg'].includes(ext)) return ext
+  return '.img'
+}
+
+function fetchBuffer(targetUrl, depth = 0) {
+  return new Promise((resolve, reject) => {
+    if (depth > 5) {
+      reject(new Error('Too many redirects'))
+      return
+    }
+    const isHttps = targetUrl.startsWith('https')
+    const mod = isHttps ? https : http
+    const options = new URL(targetUrl)
+    options.agent = isHttps ? keepAliveAgentHttps : keepAliveAgent
+    options.headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    }
+    const req = mod.get(options, (res) => {
+      const status = res.statusCode || 200
+      if (status >= 300 && status < 400 && res.headers.location) {
+        res.resume()
+        fetchBuffer(resolveUrl(targetUrl, res.headers.location), depth + 1).then(resolve, reject)
+        return
+      }
+      if (status < 200 || status >= 300) {
+        res.resume()
+        reject(new Error(`HTTP ${status}`))
+        return
+      }
+      const chunks = []
+      let size = 0
+      res.on('data', (chunk) => {
+        size += chunk.length
+        if (size > 2 * 1024 * 1024) {
+          req.destroy(new Error('Logo too large'))
+          return
+        }
+        chunks.push(chunk)
+      })
+      res.on('end', () => {
+        resolve({
+          body: Buffer.concat(chunks),
+          contentType: res.headers['content-type'] || 'application/octet-stream',
+        })
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(15000, () => req.destroy(new Error('Request timeout')))
+  })
+}
+
+async function refreshChannelsToDb() {
+  const sources = store.getEnabledPlaylistSources()
+  const results = []
+  for (const source of sources) {
+    try {
+      const text = await fetchText(source.url)
+      const channels = source.url.endsWith('.json') ? JSON.parse(text) : parseM3U(text)
+      store.replaceSourceChannels(source.id, channels)
+      results.push({ url: source.url, ok: true, count: channels.length })
+    } catch (e) {
+      store.markSourceFetchFailed(source.id, e.message)
+      results.push({ url: source.url, ok: false, error: e.message })
+    }
+  }
+  return { results, channels: store.listChannels() }
+}
+
+async function serveLogo(logoUrl, res) {
+  try {
+    if (!logoUrl || !/^https?:\/\//i.test(logoUrl)) {
+      res.writeHead(204)
+      res.end()
+      return
+    }
+    const cached = store.getLogoCache(logoUrl)
+    if (cached && cached.file_path && fs.existsSync(cached.file_path)) {
+      store.touchLogoCache(logoUrl)
+      res.writeHead(200, {
+        'Content-Type': cached.content_type || MIME[path.extname(cached.file_path)] || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=604800',
+      })
+      fs.createReadStream(cached.file_path).pipe(res)
+      return
+    }
+    const fetched = await fetchBuffer(logoUrl)
+    const ext = logoExtension(fetched.contentType, logoUrl)
+    const saved = store.saveLogoCache(logoUrl, fetched.contentType, fetched.body, ext)
+    res.writeHead(200, {
+      'Content-Type': saved.content_type || MIME[path.extname(saved.file_path)] || 'application/octet-stream',
+      'Cache-Control': 'public, max-age=604800',
+    })
+    res.end(fetched.body)
+  } catch {
+    res.writeHead(204)
+    res.end()
+  }
 }
 
 function fetchURL(targetUrl, headers, res) {
@@ -143,6 +300,10 @@ function startServer() {
   return new Promise((resolve) => {
     server = http.createServer((req, res) => {
       const parsedUrl = new URL(req.url, `http://${req.headers.host}`)
+      if (parsedUrl.pathname === '/logo') {
+        serveLogo(parsedUrl.searchParams.get('url'), res)
+        return
+      }
       if (parsedUrl.pathname === '/proxy') {
         const targetUrl = parsedUrl.searchParams.get('url')
         if (targetUrl) {
@@ -194,6 +355,12 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null)
+  store = new IptvStore(app.getPath('userData'))
+  try {
+    if (fs.existsSync(FAVORITES_FILE)) {
+      store.importFavorites(JSON.parse(fs.readFileSync(FAVORITES_FILE, 'utf-8')))
+    }
+  } catch {}
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -232,24 +399,23 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   if (server) server.close()
+  if (store) store.close()
 })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-ipcMain.handle('get-favorites', () => loadFavorites())
+ipcMain.handle('get-channels', () => store.listChannels())
+
+ipcMain.handle('refresh-channels', async () => refreshChannelsToDb())
+
+ipcMain.handle('get-playlist-sources', () => store.getPlaylistSources())
+
+ipcMain.handle('get-favorites', () => store.getFavorites())
 
 ipcMain.handle('toggle-favorite', (_event, channelId) => {
-  const favorites = loadFavorites()
-  const index = favorites.indexOf(channelId)
-  if (index === -1) {
-    favorites.push(channelId)
-  } else {
-    favorites.splice(index, 1)
-  }
-  saveFavorites(favorites)
-  return favorites
+  return store.toggleFavorite(channelId)
 })
 
 ipcMain.handle('set-channel-headers', (_event, headers) => {
@@ -273,6 +439,14 @@ function saveLastChannel(url) {
 
 ipcMain.handle('get-last-channel', () => loadLastChannel())
 ipcMain.handle('save-last-channel', (_event, url) => { saveLastChannel(url) })
+
+ipcMain.handle('record-play', (_event, url) => {
+  if (url) store.recordPlay(url)
+})
+
+ipcMain.handle('update-channel-health', (_event, url, status, error) => {
+  if (url) store.updateChannelHealth(url, status, error)
+})
 
 function loadSettings() {
   try {

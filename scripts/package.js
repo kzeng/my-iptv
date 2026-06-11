@@ -8,12 +8,15 @@ const RELEASE = process.env.MY_IPTV_RELEASE_DIR
   ? path.resolve(ROOT, process.env.MY_IPTV_RELEASE_DIR)
   : path.join(ROOT, 'release')
 const APP_NAME = 'My IPTV'
-const APP_FILES = ['main.js', 'preload.js', 'index.html', 'style.css', 'app.js', 'channels.json', 'package.json']
+const APP_FILES = ['main.js', 'preload.js', 'index.html', 'style.css', 'app.js', 'db.js', 'channels.json', 'package.json']
 const APP_DIRS = [
   { src: 'assets', dst: 'assets' },
   { src: 'lib', dst: 'lib' },
+  { src: path.join('node_modules', 'better-sqlite3'), dst: path.join('node_modules', 'better-sqlite3') },
+  { src: path.join('node_modules', 'bindings'), dst: path.join('node_modules', 'bindings') },
+  { src: path.join('node_modules', 'file-uri-to-path'), dst: path.join('node_modules', 'file-uri-to-path') },
 ]
-const PRUNE_APP_PATHS = ['channels.m3u', 'node_modules']
+const PRUNE_APP_PATHS = ['channels.m3u']
 
 const platform = process.platform
 
@@ -82,6 +85,13 @@ function pruneAppResources(appResources) {
   }
 }
 
+function pruneRuntimeDependencies(appResources) {
+  const sqliteDir = path.join(appResources, 'node_modules', 'better-sqlite3')
+  for (const p of ['deps', 'src', 'binding.gyp', 'README.md']) {
+    rmrfIfPossible(path.join(sqliteDir, p))
+  }
+}
+
 function buildMac() {
   const appDir = path.join(RELEASE, `${APP_NAME}.app`)
   const contentsDir = path.join(appDir, 'Contents')
@@ -102,6 +112,7 @@ function buildMac() {
   for (const d of APP_DIRS) {
     cp(path.join(ROOT, d.src), path.join(appResources, d.dst))
   }
+  pruneRuntimeDependencies(appResources)
 
   const plist = path.join(contentsDir, 'Info.plist')
   try {
@@ -140,6 +151,7 @@ function buildWin() {
   for (const d of APP_DIRS) {
     cp(path.join(ROOT, d.src), path.join(appResources, d.dst))
   }
+  pruneRuntimeDependencies(appResources)
 
   const zipName = `${APP_NAME}-1.0.0-win-x64.zip`
   buildZip(appDir, path.join(RELEASE, zipName))
@@ -165,6 +177,7 @@ function buildLinux() {
   for (const d of APP_DIRS) {
     cp(path.join(ROOT, d.src), path.join(appResources, d.dst))
   }
+  pruneRuntimeDependencies(appResources)
 
   const archiveName = `${APP_NAME}-1.0.0-linux-x64.tar.gz`
   const archivePath = path.join(RELEASE, archiveName)
@@ -177,7 +190,7 @@ function buildZip(srcDir, dstPath) {
     execSync(`ditto -c -k --sequesterRsrc --keepParent "${srcDir}" "${dstPath}"`)
   } else if (process.platform === 'win32') {
     try {
-      execSync(`powershell -NoProfile -Command "Compress-Archive -LiteralPath '${srcDir}' -DestinationPath '${dstPath}' -Force"`)
+      execSync(`powershell -NoProfile -Command "Compress-Archive -LiteralPath '${srcDir}' -DestinationPath '${dstPath}' -Force"`, { stdio: 'ignore' })
     } catch {
       console.warn('Compress-Archive not available, skipping ZIP')
     }

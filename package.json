@@ -8,13 +8,16 @@
   "scripts": {
     "start": "electron . 2>/dev/null",
     "dev": "electron . --dev",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "build:m3u": "node scripts/parse-m3u.js",
-    "build": "npm run build:m3u && node scripts/package.js"
+    "build": "npm run rebuild:native && npm run build:m3u && node scripts/package.js"
   },
   "dependencies": {
+    "better-sqlite3": "^12.10.0",
     "hls.js": "^1.5.0"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "electron": "^33.0.0",
     "electron-packager": "^17.1.2"
   }
