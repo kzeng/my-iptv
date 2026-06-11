@@ -240,13 +240,14 @@ function createVirtualSpacer(height) {
 
 function renderChannels(list, resetScroll = false) {
   if (resetScroll) channelList.scrollTop = 0
+  const scrollTop = channelList.scrollTop
+  const viewportHeight = channelList.clientHeight || 600
   channelList.innerHTML = ''
   if (list.length === 0) {
     channelList.innerHTML = `<div class="empty-msg">${t('noChannelsFound')}</div>`
     return
   }
-  const viewportHeight = channelList.clientHeight || 600
-  const start = Math.max(0, Math.floor(channelList.scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN)
+  const start = Math.max(0, Math.floor(scrollTop / VIRTUAL_ROW_HEIGHT) - VIRTUAL_OVERSCAN)
   const visibleCount = Math.ceil(viewportHeight / VIRTUAL_ROW_HEIGHT) + VIRTUAL_OVERSCAN * 2
   const end = Math.min(list.length, start + visibleCount)
   const frag = document.createDocumentFragment()
