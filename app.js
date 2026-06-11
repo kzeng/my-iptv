@@ -352,7 +352,7 @@ function playChannel(ch) {
 
     const isHLS = ch.url.includes('.m3u8')
 
-    if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
+    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
       hls = new Hls({
         maxBufferLength: settings.maxBufferLength || DEFAULT_SETTINGS.maxBufferLength,
         maxMaxBufferLength: settings.maxMaxBufferLength || DEFAULT_SETTINGS.maxMaxBufferLength,
@@ -369,7 +369,17 @@ function playChannel(ch) {
       })
       hls.loadSource(PROXY_BASE + encodeURIComponent(ch.url))
       hls.attachMedia(video)
+      const thisHls = hls
+      let hlsFallbackTimer = null
+      const hlsFailed = () => {
+        if (hlsFallbackTimer) { clearTimeout(hlsFallbackTimer); hlsFallbackTimer = null }
+        if (hls !== thisHls) return
+        thisHls.destroy()
+        hls = null
+        playDirect(ch)
+      }
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (hlsFallbackTimer) { clearTimeout(hlsFallbackTimer); hlsFallbackTimer = null }
         window.iptvAPI.updateChannelHealth(ch.url, 'ok')
         video.classList.add('visible')
         video.muted = true
@@ -396,21 +406,18 @@ function playChannel(ch) {
           const prefix = code ? 'HTTP ' + code + ' (' + detail + ')' : detail
           const hint = data.details && data.details.includes('LoadError') ? t('streamOffline') : ''
           window.iptvAPI.updateChannelHealth(ch.url, 'error', prefix)
+          if (!isHLS) {
+            hlsFailed()
+            return
+          }
           showError(t('stream') + prefix + hint, true)
         }
       })
+      if (!isHLS) {
+        hlsFallbackTimer = setTimeout(hlsFailed, 8000)
+      }
     } else {
-      video.classList.add('visible')
-      video.muted = true
-      video.src = ch.url
-      video.play().then(() => {
-        window.iptvAPI.updateChannelHealth(ch.url, 'ok')
-        setTimeout(() => { video.muted = false }, 500)
-      }).catch((e) => {
-        if (ch.url !== currentChannel?.url) return
-        window.iptvAPI.updateChannelHealth(ch.url, 'error', e.message)
-        showError(t('unsupportedStream') + e.message)
-      })
+      playDirect(ch)
     }
 
     updateActiveChannel()
@@ -418,6 +425,20 @@ function playChannel(ch) {
     console.error('[playChannel ERROR]', err.message, err.stack?.slice(0, 200))
     showError(t('error') + err.message)
   }
+}
+
+function playDirect(ch) {
+  video.classList.add('visible')
+  video.muted = true
+  video.src = ch.url
+  video.play().then(() => {
+    window.iptvAPI.updateChannelHealth(ch.url, 'ok')
+    setTimeout(() => { video.muted = false }, 500)
+  }).catch((e) => {
+    if (ch.url !== currentChannel?.url) return
+    window.iptvAPI.updateChannelHealth(ch.url, 'error', e.message)
+    showError(t('unsupportedStream') + e.message)
+  })
 }
 
 async function toggleFavorite(channelUrl) {
