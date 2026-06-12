@@ -159,10 +159,12 @@ class IptvStore {
 
   listChannels() {
     const rows = this.db.prepare(`
-      SELECT name, url, logo_url, group_title, user_agent, referrer
-      FROM channels
-      WHERE enabled = 1
-      ORDER BY name COLLATE NOCASE ASC
+      SELECT c.name, c.url, c.logo_url, c.group_title, c.user_agent, c.referrer,
+        ps.id AS source_id, ps.name AS source_name, ps.url AS source_url
+      FROM channels c
+      JOIN playlist_sources ps ON ps.id = c.source_id
+      WHERE c.enabled = 1
+      ORDER BY c.name COLLATE NOCASE ASC
     `).all()
     const seen = new Set()
     return rows.reduce((acc, row) => {
@@ -176,6 +178,9 @@ class IptvStore {
         group: row.group_title || '',
         userAgent: row.user_agent || '',
         referrer: row.referrer || '',
+        sourceId: row.source_id,
+        sourceName: row.source_name || '',
+        sourceUrl: row.source_url || '',
       })
       return acc
     }, [])

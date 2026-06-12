@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   fragLoadingTimeOut: 20000,
   levelLoadingTimeOut: 20000,
   manifestLoadingTimeOut: 20000,
+  debugLog: false,
 }
 
 let channels = []
@@ -29,6 +30,8 @@ const VIRTUAL_ROW_HEIGHT = 40
 const VIRTUAL_OVERSCAN = 10
 let searchDebounceTimer = null
 let virtualRenderFrame = null
+let playSessionSeq = 0
+let playMetrics = null
 
 const I18N = {
   zh: {
@@ -63,6 +66,7 @@ const I18N = {
     enableWorker: '启用 Web Worker',
     capPlayerSize: '限制到播放器尺寸',
     preloadNext: '预加载下一分片',
+    debugLog: '开启播放 Debug 日志',
     resetDefaults: '恢复默认',
     applyClose: '应用并关闭',
     aboutHeader: '关于 My IPTV',
@@ -121,6 +125,7 @@ const I18N = {
     enableWorker: 'Enable Web Worker',
     capPlayerSize: 'Cap to Player Size',
     preloadNext: 'Preload Next Fragment',
+    debugLog: 'Enable playback debug log',
     resetDefaults: 'Reset Defaults',
     applyClose: 'Apply & Close',
     aboutHeader: 'About My IPTV',
@@ -191,6 +196,56 @@ function applyLanguage() {
 function applyAppearance() {
   applyTheme()
   applyLanguage()
+}
+
+function shouldWriteDebugLog() {
+  return Boolean(settings.debugLog)
+}
+
+function channelDebugInfo(ch) {
+  return {
+    channelName: ch?.name || '',
+    channelUrl: ch?.url || '',
+    source: ch?.sourceName || '',
+    sourceUrl: ch?.sourceUrl || '',
+    group: ch?.group || '',
+  }
+}
+
+function writePlaybackDebug(event, data = {}) {
+  if (!shouldWriteDebugLog()) return
+  window.iptvAPI.writeDebugLog({
+    event,
+    sessionId: playMetrics?.sessionId || null,
+    elapsedMs: playMetrics ? Math.round(performance.now() - playMetrics.startedAt) : null,
+    waitingCount: playMetrics?.waitingCount || 0,
+    stalledCount: playMetrics?.stalledCount || 0,
+    ...channelDebugInfo(currentChannel),
+    ...data,
+  }).catch(() => {})
+}
+
+function startPlaybackMetrics(ch, isHLS) {
+  playMetrics = {
+    sessionId: ++playSessionSeq,
+    startedAt: performance.now(),
+    manifestLoadedAt: null,
+    firstFrameAt: null,
+    waitingCount: 0,
+    stalledCount: 0,
+    isHLS,
+  }
+  writePlaybackDebug('play_start', { isHLS })
+  return playMetrics.sessionId
+}
+
+function isCurrentPlaybackSession(sessionId) {
+  return playMetrics && playMetrics.sessionId === sessionId
+}
+
+function markPlaybackEvent(sessionId, event, data = {}) {
+  if (!isCurrentPlaybackSession(sessionId)) return
+  writePlaybackDebug(event, data)
 }
 
 async function loadChannels() {
@@ -352,8 +407,29 @@ function playChannel(ch) {
     })
 
     const isHLS = ch.url.includes('.m3u8')
+    const sessionId = startPlaybackMetrics(ch, isHLS)
+    video.onwaiting = () => {
+      if (!isCurrentPlaybackSession(sessionId)) return
+      playMetrics.waitingCount += 1
+      markPlaybackEvent(sessionId, 'video_waiting')
+    }
+    video.onstalled = () => {
+      if (!isCurrentPlaybackSession(sessionId)) return
+      playMetrics.stalledCount += 1
+      markPlaybackEvent(sessionId, 'video_stalled')
+    }
+    video.onplaying = () => {
+      if (!isCurrentPlaybackSession(sessionId) || playMetrics.firstFrameAt) return
+      playMetrics.firstFrameAt = performance.now()
+      markPlaybackEvent(sessionId, 'first_frame', {
+        firstFrameMs: Math.round(playMetrics.firstFrameAt - playMetrics.startedAt),
+        manifestMs: playMetrics.manifestLoadedAt
+          ? Math.round(playMetrics.manifestLoadedAt - playMetrics.startedAt)
+          : null,
+      })
+    }
 
-    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+    if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
       hls = new Hls({
         maxBufferLength: settings.maxBufferLength || DEFAULT_SETTINGS.maxBufferLength,
         maxMaxBufferLength: settings.maxMaxBufferLength || DEFAULT_SETTINGS.maxMaxBufferLength,
@@ -370,17 +446,12 @@ function playChannel(ch) {
       })
       hls.loadSource(PROXY_BASE + encodeURIComponent(ch.url))
       hls.attachMedia(video)
-      const thisHls = hls
-      let hlsFallbackTimer = null
-      const hlsFailed = () => {
-        if (hlsFallbackTimer) { clearTimeout(hlsFallbackTimer); hlsFallbackTimer = null }
-        if (hls !== thisHls) return
-        thisHls.destroy()
-        hls = null
-        playDirect(ch)
-      }
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        if (hlsFallbackTimer) { clearTimeout(hlsFallbackTimer); hlsFallbackTimer = null }
+        if (!isCurrentPlaybackSession(sessionId)) return
+        playMetrics.manifestLoadedAt = performance.now()
+        markPlaybackEvent(sessionId, 'manifest_loaded', {
+          manifestMs: Math.round(playMetrics.manifestLoadedAt - playMetrics.startedAt),
+        })
         window.iptvAPI.updateChannelHealth(ch.url, 'ok')
         video.classList.add('visible')
         video.muted = true
@@ -394,6 +465,7 @@ function playChannel(ch) {
             }, 500)
             return
           }
+          markPlaybackEvent(sessionId, 'play_rejected', { error: e.message })
           showError(t('clickToPlay') + e.message, true)
           video.muted = false
           video.classList.add('visible')
@@ -401,22 +473,21 @@ function playChannel(ch) {
       })
       hls.on(Hls.Events.ERROR, (_e, data) => {
         console.error('[HLS]', data.type, data.details, data.fatal ? 'FATAL' : '')
+        markPlaybackEvent(sessionId, 'hls_error', {
+          fatal: Boolean(data.fatal),
+          type: data.type || '',
+          details: data.details || '',
+          responseCode: data.response?.code || null,
+        })
         if (data.fatal) {
           const code = data.response ? data.response.code : ''
           const detail = data.details || data.type || 'unknown'
           const prefix = code ? 'HTTP ' + code + ' (' + detail + ')' : detail
           const hint = data.details && data.details.includes('LoadError') ? t('streamOffline') : ''
           window.iptvAPI.updateChannelHealth(ch.url, 'error', prefix)
-          if (!isHLS) {
-            hlsFailed()
-            return
-          }
           showError(t('stream') + prefix + hint, true)
         }
       })
-      if (!isHLS) {
-        hlsFallbackTimer = setTimeout(hlsFailed, 8000)
-      }
     } else {
       playDirect(ch)
     }
@@ -437,6 +508,7 @@ function playDirect(ch) {
     setTimeout(() => { video.muted = false }, 500)
   }).catch((e) => {
     if (ch.url !== currentChannel?.url) return
+    writePlaybackDebug('play_rejected', { error: e.message })
     window.iptvAPI.updateChannelHealth(ch.url, 'error', e.message)
     showError(t('unsupportedStream') + e.message)
   })
@@ -642,6 +714,7 @@ function populateSettingsPanel() {
   document.getElementById('s-enableWorker').checked = s.enableWorker
   document.getElementById('s-capLevelToPlayerSize').checked = s.capLevelToPlayerSize
   document.getElementById('s-startFragPrefetch').checked = s.startFragPrefetch
+  document.getElementById('s-debugLog').checked = s.debugLog
 }
 
 function readSettingsPanel() {
@@ -658,6 +731,7 @@ function readSettingsPanel() {
     enableWorker: document.getElementById('s-enableWorker').checked,
     capLevelToPlayerSize: document.getElementById('s-capLevelToPlayerSize').checked,
     startFragPrefetch: document.getElementById('s-startFragPrefetch').checked,
+    debugLog: document.getElementById('s-debugLog').checked,
   }
 }
 

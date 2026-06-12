@@ -180,3 +180,73 @@ Windows 下如遇发布目录文件被锁定，需要关闭正在运行的 `My I
 虚拟滚动后自然会减少同时出现的 logo 图片；再进一步可以给 /logo 请求加简单并发限制，避免快速滚动时触发太多图片请求。
 
 先做 1 + 2 + 3 + 4，这四项能明显改善 12350 频道下的体验。5 + 6 可以作为第二阶段。
+
+
+
+ 最值得先改的是这几个：
+
+  1. 非 HLS 流不要先走 Hls.js
+
+     当前 /C:/Work/project/my-iptv/app.js:357 只要 Hls.isSupported() 就先创建 new Hls()，即使频道 URL 不是 .m3u8。然后 8 秒后才 fallback 到 playDirect()。
+
+     这会导致部分非 HLS 源白等 8 秒，甚至触发本地代理下载大文件。建议改成：
+      - .m3u8：走 Hls.js。
+      - 非 .m3u8：直接 video.src = ch.url 播放。
+      - 不再对非 HLS 源试探 Hls.js。
+
+  2. 本地代理不要缓存大媒体内容后再返回
+
+     /C:/Work/project/my-iptv/main.js:300 的代理对非 m3u8 内容会先收集 chunks，等完整下载后才 res.end(body)。如果未来 .ts/.m4s/aac/mp4 也走到代理，会明显增加首帧等待和卡顿。
+
+     建议：
+      - m3u8 manifest 可以缓存到内存并重写。
+      - 媒体分片必须 proxyRes.pipe(res) 流式转发。
+      - 保留超时和错误处理，但不要等待完整分片下载完再给播放器。
+
+  3. 增加卡顿恢复逻辑
+
+     当前 Hls.js 只处理 fatal error。实际播放卡顿很多时候是 non-fatal，比如 buffer stalled、fragment retry、解码恢复等。
+
+     建议监听：
+      - video.waiting
+      - video.stalled
+      - video.playing
+      - Hls.Events.ERROR
+
+     对 BUFFER_STALLED_ERROR、FRAG_LOAD_ERROR、LEVEL_LOAD_ERROR 做轻量恢复，例如 hls.startLoad()、必要时 hls.recoverMediaError()。同时避免无限重试。
+
+  4. 增加播放性能日志
+
+     现在很难判断慢在哪里。建议记录：
+      - 点击频道时间
+      - manifest 加载完成时间
+      - 首帧播放时间
+      - waiting/stalled 次数
+      - fatal/non-fatal HLS 错误
+      - 当前频道 URL、source、group
+
+     这些可以写入 SQLite 的 channel_health 或单独 debug log。这样 Win10/Ubuntu/macOS 的差异能定位到是 manifest 慢、分片慢、解码慢，还是播放器恢复策略差。
+
+  5. HLS 默认参数再调一版
+
+     当前默认：
+      - maxBufferLength: 90
+      - maxMaxBufferLength: 300
+      - maxBufferSize: 200MB
+      - startLevel: -1
+
+     对直播 IPTV 来说偏“稳态缓冲”，不一定利于快速起播。可以考虑增加“低延迟/快速起播”模式：
+      - maxBufferLength 降到 30-60
+      - maxMaxBufferLength 降到 120
+      - startLevel 默认先用低码率层，起播后自动升
+      - 开启或配置 lowLatencyMode
+      - 给 live stream 设置合理的 live sync 参数
+
+  我的建议实施顺序：
+
+  1. 先改 非 HLS 直接播放。
+  2. 再改 代理媒体流式转发。
+  3. 加 播放等待/卡顿/HLS 错误日志。
+  4. 最后基于日志调 HLS 参数。
+
+  这几项都属于应用层优化，不依赖换源或改善网络。当前最可疑的是第 1 点和第 2 点。

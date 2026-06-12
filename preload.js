@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld('iptvAPI', {
   updateChannelHealth: (url, status, error) => ipcRenderer.invoke('update-channel-health', url, status, error),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  writeDebugLog: (entry) => ipcRenderer.invoke('write-debug-log', entry),
   saveFile: (options, data) => ipcRenderer.invoke('save-file', options, data),
 })

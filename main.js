@@ -8,6 +8,7 @@ const { IptvStore, parseM3U } = require('./db')
 const FAVORITES_FILE = path.join(app.getPath('userData'), 'favorites.json')
 const LAST_CHANNEL_FILE = path.join(app.getPath('userData'), 'last-channel.json')
 const SETTINGS_FILE = path.join(app.getPath('userData'), 'settings.json')
+const DEBUG_LOG_FILE = path.join(app.getPath('userData'), 'debug-log.txt')
 const PORT = 12999
 const ROOT = __dirname
 const APP_ICON = path.join(ROOT, 'assets', 'my-iptv-logo.png')
@@ -296,42 +297,55 @@ function _doFetch(targetUrl, headers, res, depth) {
       return
     }
     let sniffedM3U8 = false
+    let streaming = false
     const chunks = []
-    proxyRes.on('data', (chunk) => {
-      chunks.push(chunk)
-      if (!sniffedM3U8 && chunks.length === 1) {
-        const head = chunk.toString('utf-8').trimStart()
-        if (head.startsWith('#EXTM3U')) {
-          sniffedM3U8 = true
-          proxyRes.removeAllListeners('data')
-          proxyRes.removeAllListeners('end')
-          proxyRes.on('data', (c) => chunks.push(c))
-          proxyRes.on('end', () => {
-            finished = true
-            cleanup()
-            const body = Buffer.concat(chunks).toString('utf-8')
-            const rewritten = rewriteM3U8(body, targetUrl)
-            res.writeHead(status, {
-              'Content-Type': 'application/vnd.apple.mpegurl',
-              'Access-Control-Allow-Origin': '*',
-              'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-            })
-            res.end(rewritten)
-          })
-        }
-      }
-    })
-    proxyRes.on('end', () => {
-      if (sniffedM3U8) return
-      finished = true
-      cleanup()
-      const body = Buffer.concat(chunks)
+    const streamHeaders = () => {
       res.writeHead(status, {
-        'Content-Type': contentType,
+        'Content-Type': contentType || 'application/octet-stream',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
       })
-      res.end(body)
+    }
+    proxyRes.on('data', (chunk) => {
+      if (streaming) {
+        if (!res.write(chunk)) proxyRes.pause()
+        return
+      }
+      if (chunks.length === 0) {
+        const head = chunk.toString('utf-8').trimStart()
+        if (head.startsWith('#EXTM3U')) {
+          sniffedM3U8 = true
+          chunks.push(chunk)
+          return
+        }
+        streaming = true
+        streamHeaders()
+        if (!res.write(chunk)) proxyRes.pause()
+        return
+      }
+      chunks.push(chunk)
+    })
+    res.on('drain', () => proxyRes.resume())
+    proxyRes.on('end', () => {
+      finished = true
+      cleanup()
+      if (sniffedM3U8) {
+        const body = Buffer.concat(chunks).toString('utf-8')
+        const rewritten = rewriteM3U8(body, targetUrl)
+        res.writeHead(status, {
+          'Content-Type': 'application/vnd.apple.mpegurl',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+        })
+        res.end(rewritten)
+        return
+      }
+      if (streaming) {
+        res.end()
+        return
+      }
+      streamHeaders()
+      res.end()
     })
   })
 
@@ -462,11 +476,7 @@ app.whenReady().then(async () => {
       return
     }
     if (url.includes('.m3u8') || url.includes('.ts') || url.includes('.m4s') || url.includes('.aac')) {
-      if (url.includes('.m3u8')) {
-        callback({ redirectURL: `http://127.0.0.1:${PORT}/proxy?url=${encodeURIComponent(url)}` })
-      } else {
-        callback({})
-      }
+      callback({ redirectURL: `http://127.0.0.1:${PORT}/proxy?url=${encodeURIComponent(url)}` })
       return
     }
     callback({})
@@ -548,6 +558,16 @@ function saveSettings(settings) {
 
 ipcMain.handle('get-settings', () => loadSettings())
 ipcMain.handle('save-settings', (_event, settings) => { saveSettings(settings) })
+ipcMain.handle('write-debug-log', (_event, entry) => {
+  try {
+    fs.mkdirSync(path.dirname(DEBUG_LOG_FILE), { recursive: true })
+    const line = JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'
+    fs.appendFileSync(DEBUG_LOG_FILE, line)
+    return { ok: true, path: DEBUG_LOG_FILE }
+  } catch (e) {
+    return { ok: false, error: e.message }
+  }
+})
 
 ipcMain.handle('save-file', async (_event, options, data) => {
   const { filePath } = await dialog.showSaveDialog(mainWindow, options)

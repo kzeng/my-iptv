@@ -189,18 +189,25 @@ function buildZip(srcDir, dstPath) {
   if (process.platform === 'darwin') {
     execSync(`ditto -c -k --sequesterRsrc --keepParent "${srcDir}" "${dstPath}"`)
   } else if (process.platform === 'win32') {
+    const releaseDir = path.dirname(srcDir)
+    const appDirName = path.basename(srcDir)
     try {
-      execSync(`powershell -NoProfile -Command "Compress-Archive -LiteralPath '${srcDir}' -DestinationPath '${dstPath}' -Force"`, { stdio: 'ignore' })
+      rmrfIfPossible(dstPath)
+      execSync(`tar -a -cf "${dstPath}" -C "${releaseDir}" "${appDirName}"`, { stdio: 'inherit' })
     } catch {
-      console.warn('Compress-Archive not available, skipping ZIP')
+      console.warn('tar ZIP failed, trying Compress-Archive')
+      execSync(`powershell -NoProfile -Command "Compress-Archive -LiteralPath '${srcDir}' -DestinationPath '${dstPath}' -Force"`, { stdio: 'inherit' })
     }
   } else {
     // fallback: use zip command if available
     try {
       execSync(`zip -r "${dstPath}" "${path.basename(srcDir)}"`, { cwd: path.dirname(srcDir) })
     } catch {
-      console.warn('zip command not available, skipping ZIP')
+      throw new Error('zip command not available')
     }
+  }
+  if (!fs.existsSync(dstPath) || fs.statSync(dstPath).size === 0) {
+    throw new Error(`ZIP was not created: ${dstPath}`)
   }
 }
 
