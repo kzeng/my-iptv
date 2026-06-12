@@ -32,6 +32,7 @@ let searchDebounceTimer = null
 let virtualRenderFrame = null
 let playSessionSeq = 0
 let playMetrics = null
+const MANIFEST_WAIT_LOG_MS = 20000
 
 const I18N = {
   zh: {
@@ -214,28 +215,45 @@ function channelDebugInfo(ch) {
 
 function writePlaybackDebug(event, data = {}) {
   if (!shouldWriteDebugLog()) return
+  const info = playMetrics?.channelInfo || channelDebugInfo(currentChannel)
   window.iptvAPI.writeDebugLog({
     event,
     sessionId: playMetrics?.sessionId || null,
     elapsedMs: playMetrics ? Math.round(performance.now() - playMetrics.startedAt) : null,
     waitingCount: playMetrics?.waitingCount || 0,
     stalledCount: playMetrics?.stalledCount || 0,
-    ...channelDebugInfo(currentChannel),
+    ...info,
     ...data,
   }).catch(() => {})
 }
 
 function startPlaybackMetrics(ch, isHLS) {
+  finishPlaybackMetrics('play_abandoned')
   playMetrics = {
     sessionId: ++playSessionSeq,
     startedAt: performance.now(),
+    channelInfo: channelDebugInfo(ch),
     manifestLoadedAt: null,
     firstFrameAt: null,
+    ended: false,
+    manifestTimer: null,
     waitingCount: 0,
     stalledCount: 0,
+    levelLoadedCount: 0,
+    fragLoadingCount: 0,
+    fragLoadedCount: 0,
+    bufferAppendedCount: 0,
+    fragLoadStarts: new Map(),
+    abrRestored: false,
     isHLS,
   }
   writePlaybackDebug('play_start', { isHLS })
+  if (isHLS) {
+    playMetrics.manifestTimer = setTimeout(() => {
+      if (!playMetrics || playMetrics.ended || playMetrics.manifestLoadedAt) return
+      writePlaybackDebug('manifest_timeout_waiting', { waitMs: MANIFEST_WAIT_LOG_MS })
+    }, MANIFEST_WAIT_LOG_MS)
+  }
   return playMetrics.sessionId
 }
 
@@ -246,6 +264,29 @@ function isCurrentPlaybackSession(sessionId) {
 function markPlaybackEvent(sessionId, event, data = {}) {
   if (!isCurrentPlaybackSession(sessionId)) return
   writePlaybackDebug(event, data)
+}
+
+function finishPlaybackMetrics(reason) {
+  if (!playMetrics || playMetrics.ended) return
+  if (playMetrics.manifestTimer) {
+    clearTimeout(playMetrics.manifestTimer)
+    playMetrics.manifestTimer = null
+  }
+  if (!playMetrics.firstFrameAt && reason) {
+    writePlaybackDebug(reason)
+  }
+  playMetrics.ended = true
+}
+
+function readBufferedRanges() {
+  const ranges = []
+  for (let i = 0; i < video.buffered.length; i++) {
+    ranges.push({
+      start: Number(video.buffered.start(i).toFixed(3)),
+      end: Number(video.buffered.end(i).toFixed(3)),
+    })
+  }
+  return ranges
 }
 
 async function loadChannels() {
@@ -427,16 +468,24 @@ function playChannel(ch) {
           ? Math.round(playMetrics.manifestLoadedAt - playMetrics.startedAt)
           : null,
       })
+      if (playMetrics.isHLS && hls && !playMetrics.abrRestored) {
+        hls.currentLevel = -1
+        hls.nextLevel = -1
+        playMetrics.abrRestored = true
+        markPlaybackEvent(sessionId, 'abr_restored')
+      }
     }
 
     if (isHLS && typeof Hls !== 'undefined' && Hls.isSupported()) {
+      const configuredStartLevel = Number(settings.startLevel)
+      const startupLevel = configuredStartLevel >= 0 ? configuredStartLevel : 0
       hls = new Hls({
         maxBufferLength: settings.maxBufferLength || DEFAULT_SETTINGS.maxBufferLength,
         maxMaxBufferLength: settings.maxMaxBufferLength || DEFAULT_SETTINGS.maxMaxBufferLength,
         maxBufferSize: (settings.maxBufferSize || DEFAULT_SETTINGS.maxBufferSize) * 1000 * 1000,
         backBufferLength: settings.backBufferLength ?? DEFAULT_SETTINGS.backBufferLength,
         enableWorker: settings.enableWorker ?? DEFAULT_SETTINGS.enableWorker,
-        startLevel: settings.startLevel ?? DEFAULT_SETTINGS.startLevel,
+        startLevel: startupLevel,
         capLevelToPlayerSize: settings.capLevelToPlayerSize ?? DEFAULT_SETTINGS.capLevelToPlayerSize,
         startFragPrefetch: settings.startFragPrefetch ?? DEFAULT_SETTINGS.startFragPrefetch,
         fragLoadingMaxRetry: settings.fragLoadingMaxRetry ?? DEFAULT_SETTINGS.fragLoadingMaxRetry,
@@ -446,11 +495,66 @@ function playChannel(ch) {
       })
       hls.loadSource(PROXY_BASE + encodeURIComponent(ch.url))
       hls.attachMedia(video)
+      hls.on(Hls.Events.LEVEL_LOADED, (_e, data) => {
+        if (!isCurrentPlaybackSession(sessionId) || playMetrics.levelLoadedCount >= 2) return
+        playMetrics.levelLoadedCount += 1
+        const details = data.details || {}
+        markPlaybackEvent(sessionId, 'level_loaded', {
+          level: data.level ?? null,
+          live: Boolean(details.live),
+          targetduration: details.targetduration ?? null,
+          fragmentCount: details.fragments?.length ?? 0,
+          totalduration: details.totalduration ?? null,
+        })
+      })
+      hls.on(Hls.Events.FRAG_LOADING, (_e, data) => {
+        if (!isCurrentPlaybackSession(sessionId) || playMetrics.fragLoadingCount >= 3) return
+        playMetrics.fragLoadingCount += 1
+        const frag = data.frag || {}
+        const key = `${frag.type || 'main'}:${frag.level ?? ''}:${frag.sn ?? playMetrics.fragLoadingCount}`
+        playMetrics.fragLoadStarts.set(key, performance.now())
+        markPlaybackEvent(sessionId, 'frag_loading', {
+          fragKey: key,
+          fragUrl: frag.url || '',
+          sn: frag.sn ?? null,
+          level: frag.level ?? null,
+          duration: frag.duration ?? null,
+        })
+      })
+      hls.on(Hls.Events.FRAG_LOADED, (_e, data) => {
+        if (!isCurrentPlaybackSession(sessionId) || playMetrics.fragLoadedCount >= 3) return
+        playMetrics.fragLoadedCount += 1
+        const frag = data.frag || {}
+        const key = `${frag.type || 'main'}:${frag.level ?? ''}:${frag.sn ?? playMetrics.fragLoadedCount}`
+        const startedAt = playMetrics.fragLoadStarts.get(key)
+        const stats = data.stats || {}
+        markPlaybackEvent(sessionId, 'frag_loaded', {
+          fragKey: key,
+          sn: frag.sn ?? null,
+          level: frag.level ?? null,
+          loadMs: startedAt ? Math.round(performance.now() - startedAt) : null,
+          sizeBytes: stats.loaded ?? stats.total ?? null,
+        })
+      })
+      hls.on(Hls.Events.BUFFER_APPENDED, (_e, data) => {
+        if (!isCurrentPlaybackSession(sessionId) || playMetrics.bufferAppendedCount >= 3) return
+        playMetrics.bufferAppendedCount += 1
+        markPlaybackEvent(sessionId, 'buffer_appended', {
+          type: data.type || '',
+          pending: data.pending ?? null,
+          timeRanges: readBufferedRanges(),
+        })
+      })
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (!isCurrentPlaybackSession(sessionId)) return
+        if (playMetrics.manifestTimer) {
+          clearTimeout(playMetrics.manifestTimer)
+          playMetrics.manifestTimer = null
+        }
         playMetrics.manifestLoadedAt = performance.now()
         markPlaybackEvent(sessionId, 'manifest_loaded', {
           manifestMs: Math.round(playMetrics.manifestLoadedAt - playMetrics.startedAt),
+          startupLevel,
         })
         window.iptvAPI.updateChannelHealth(ch.url, 'ok')
         video.classList.add('visible')

@@ -229,12 +229,40 @@ function fetchURL(targetUrl, headers, res) {
   _doFetch(targetUrl, headers, res, 0)
 }
 
+function isDebugLogEnabled() {
+  return Boolean(loadSettings()?.debugLog)
+}
+
+function writeDebugLog(entry, force = false) {
+  if (!force && !isDebugLogEnabled()) return
+  try {
+    fs.mkdirSync(path.dirname(DEBUG_LOG_FILE), { recursive: true })
+    const line = JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'
+    fs.appendFileSync(DEBUG_LOG_FILE, line)
+  } catch {}
+}
+
+function proxyDebugInfo(targetUrl, startedAt, extra = {}) {
+  return {
+    event: 'proxy_request',
+    proxyElapsedMs: Date.now() - startedAt,
+    targetUrl,
+    ...extra,
+  }
+}
+
 function _doFetch(targetUrl, headers, res, depth) {
+  const startedAt = Date.now()
   if (depth > 5) {
     if (!res.headersSent) {
       res.writeHead(502)
       res.end('Too many redirects')
     }
+    writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+      phase: 'error',
+      error: 'Too many redirects',
+      depth,
+    }))
     return
   }
   let parsed
@@ -245,8 +273,19 @@ function _doFetch(targetUrl, headers, res, depth) {
       res.writeHead(400)
       res.end('Invalid URL: ' + targetUrl.slice(0, 200))
     }
+    writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+      phase: 'error',
+      error: 'Invalid URL',
+      depth,
+    }))
     return
   }
+  writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+    phase: 'start',
+    depth,
+    host: parsed.host,
+    path: parsed.pathname,
+  }))
   const isHttps = targetUrl.startsWith('https')
   const mod = isHttps ? https : http
   const options = {
@@ -274,6 +313,12 @@ function _doFetch(targetUrl, headers, res, depth) {
       proxyRes.resume()
       finished = true
       cleanup()
+      writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+        phase: 'redirect',
+        status,
+        location: proxyRes.headers.location,
+        depth,
+      }))
       _doFetch(resolveUrl(targetUrl, proxyRes.headers.location), headers, res, depth + 1)
       return
     }
@@ -287,6 +332,15 @@ function _doFetch(targetUrl, headers, res, depth) {
         cleanup()
         const body = Buffer.concat(chunks).toString('utf-8')
         const rewritten = rewriteM3U8(body, targetUrl)
+        writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+          phase: 'end',
+          status,
+          contentType,
+          kind: 'manifest',
+          bytes: Buffer.byteLength(body),
+          preview: body.trimStart().slice(0, 200),
+          depth,
+        }))
         res.writeHead(status, {
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
@@ -332,6 +386,15 @@ function _doFetch(targetUrl, headers, res, depth) {
       if (sniffedM3U8) {
         const body = Buffer.concat(chunks).toString('utf-8')
         const rewritten = rewriteM3U8(body, targetUrl)
+        writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+          phase: 'end',
+          status,
+          contentType,
+          kind: 'sniffed_manifest',
+          bytes: Buffer.byteLength(body),
+          preview: body.trimStart().slice(0, 200),
+          depth,
+        }))
         res.writeHead(status, {
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
@@ -341,9 +404,23 @@ function _doFetch(targetUrl, headers, res, depth) {
         return
       }
       if (streaming) {
+        writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+          phase: 'end',
+          status,
+          contentType,
+          kind: 'stream',
+          depth,
+        }))
         res.end()
         return
       }
+      writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+        phase: 'end',
+        status,
+        contentType,
+        kind: 'empty',
+        depth,
+      }))
       streamHeaders()
       res.end()
     })
@@ -353,13 +430,25 @@ function _doFetch(targetUrl, headers, res, depth) {
     if (finished || res.headersSent) return
     finished = true
     proxyReq.destroy()
+    writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+      phase: 'timeout',
+      status: 504,
+      error: 'Proxy timeout',
+      depth,
+    }))
     res.writeHead(504)
     res.end('Proxy timeout')
   }, 30000)
-  proxyReq.on('error', () => {
+  proxyReq.on('error', (e) => {
     if (finished || res.headersSent) return
     finished = true
     cleanup()
+    writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+      phase: 'error',
+      status: 502,
+      error: e.message,
+      depth,
+    }))
     res.writeHead(502)
     res.end()
   })
@@ -368,6 +457,12 @@ function _doFetch(targetUrl, headers, res, depth) {
     finished = true
     cleanup()
     if (!res.headersSent) {
+      writeDebugLog(proxyDebugInfo(targetUrl, startedAt, {
+        phase: 'close',
+        status: 502,
+        error: 'Connection closed',
+        depth,
+      }))
       res.writeHead(502)
       res.end('Connection closed')
     }
@@ -560,9 +655,7 @@ ipcMain.handle('get-settings', () => loadSettings())
 ipcMain.handle('save-settings', (_event, settings) => { saveSettings(settings) })
 ipcMain.handle('write-debug-log', (_event, entry) => {
   try {
-    fs.mkdirSync(path.dirname(DEBUG_LOG_FILE), { recursive: true })
-    const line = JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'
-    fs.appendFileSync(DEBUG_LOG_FILE, line)
+    writeDebugLog(entry, true)
     return { ok: true, path: DEBUG_LOG_FILE }
   } catch (e) {
     return { ok: false, error: e.message }
