@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS = {
   maxMaxBufferLength: 300,
   maxBufferSize: 200,
   backBufferLength: 30,
-  enableWorker: true,
+  enableWorker: false,
   startLevel: -1,
   capLevelToPlayerSize: true,
   startFragPrefetch: true,

@@ -555,13 +555,17 @@ app.whenReady().then(async () => {
   }
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Access-Control-Allow-Origin': ['*'],
-        'Access-Control-Allow-Headers': ['*'],
-      },
-    })
+    try {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Access-Control-Allow-Origin': ['*'],
+          'Access-Control-Allow-Headers': ['*'],
+        },
+      })
+    } catch {
+      callback({ responseHeaders: { 'Access-Control-Allow-Origin': ['*'] } })
+    }
   })
 
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {

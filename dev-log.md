@@ -104,12 +104,14 @@
 | ZIP 阶段偶发文件锁错误 | Windows 进程或 Shell 占用发布目录文件 | 构建主体保留，ZIP 失败降级为警告 |
 | `better-sqlite3` 编译失败（Apple Clang 14 + Electron 33） | V8 头文件缺少 `typename`，Apple Clang 14 在 C++20 模式下报错 | 新增 `scripts/patch-v8-headers.js`，在 `electron-rebuild` 前自动打补丁；设置 `CXXFLAGS="-std=c++20"` |
 | 频道列表虚拟滚动滚动无效 | `renderChannels` 在 `innerHTML = ''` 之后才读取 `scrollTop`，导致 `scrollTop` 被浏览器钳位到 0 | 将 `scrollTop` 和 `clientHeight` 的读取移至 `innerHTML` 清空前 |
+| HLS 播放全部超时（manifest/level/frag 均 timeout） | `onHeadersReceived` 缺少 try/catch，如果 `details.responseHeaders` 异常则 callback 不执行，响应丢失 | 包装 try/catch；默认关闭 HLS.js Web Worker（Electron 下可能干扰网络栈） |
+| HLS.js manifest 请求在 Chromium 网络中延迟 30s+ 才到达代理 | HLS.js Web Worker 在 Electron 下可能阻塞/延迟请求发送 | 默认关闭 enableWorker |
 
 ## 已完成优化
 
 - HLS 缓冲参数：`maxBufferLength` 提升到 90 秒，`maxMaxBufferLength` 为 300 秒。
 - `maxBufferSize` 提升到 200MB。
-- 开启 Web Worker，降低主线程压力。
+- 默认关闭 HLS.js Web Worker（Electron 下避免请求发送延迟）。
 - HTTP keep-alive 复用连接。
 - `fragLoadingMaxRetry` 设置为 6，`fragLoadingTimeOut` 设置为 20 秒。
 - 手动刷新频道信息到 SQLite。
